@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"time"
 )
@@ -43,6 +44,8 @@ func main() {
 	}
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
+	fmt.Println("before:", before.dir)
+	fmt.Println("after: ", after.dir)
 	fmt.Println("benchstat", before.tmp.Name(), after.tmp.Name())
 	start := time.Now()
 	for i := 0; i < *flagCount+1; i++ {
@@ -121,8 +124,12 @@ func resolve(ref string) string {
 }
 
 func worktree(ref string) commit {
+	u, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
 	sha := resolve(ref)
-	dest := filepath.Join(os.TempDir(), "compilebench", sha)
+	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
 	if !exists(dest) {
 		log.Printf("copy tree at %s (%s) to %s", ref, sha, dest)
 		if _, err := git("worktree", "add", "--detach", dest, ref); err != nil {
