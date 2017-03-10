@@ -18,6 +18,7 @@ var (
 	flagAll   = flag.Bool("all", false, "run all benchmarks, not just short ones")
 	flagCPU   = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
 	flagCount = flag.Int("n", 15, "iterations")
+	flag386   = flag.Bool("386", false, "run in 386 mode")
 )
 
 var cwd string
@@ -131,6 +132,9 @@ func worktree(ref string) commit {
 	}
 	sha := resolve(ref)
 	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
+	if *flag386 {
+		dest += "-386"
+	}
 	if !exists(dest) {
 		log.Printf("copy tree at %s (%s) to %s", ref, sha, dest)
 		if _, err := git("worktree", "add", "--detach", dest, ref); err != nil {
@@ -140,6 +144,9 @@ func worktree(ref string) commit {
 	cmdgo := filepath.Join(dest, "bin", "go")
 	if !exists(cmdgo) {
 		cmd := exec.Command("./make.bash")
+		if *flag386 {
+			cmd.Env = append(os.Environ(), "GOARCH=386", "GOHOSTARCH=386")
+		}
 		cmd.Dir = filepath.Join(dest, "src")
 		log.Printf("%s/make.bash", cmd.Dir)
 		out, err := cmd.CombinedOutput()
