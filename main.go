@@ -42,6 +42,7 @@ func main() {
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
 	}
+	fmt.Printf("compilecmp %s %s\n", beforeRef, afterRef)
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
