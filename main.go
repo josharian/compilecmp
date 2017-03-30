@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,7 @@ var (
 	flagCPU   = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
 	flagCount = flag.Int("n", 15, "iterations")
 	flag386   = flag.Bool("386", false, "run in 386 mode")
+	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
 )
 
 var cwd string
@@ -43,6 +45,24 @@ func main() {
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
 	}
+	if !*flagEach {
+		compare(beforeRef, afterRef)
+		return
+	}
+	list, err := git("rev-list", afterRef, beforeRef+".."+afterRef)
+	check(err)
+	revs := strings.Fields(string(list))
+	for i := len(revs); i > 0; i-- {
+		before := beforeRef
+		if i < len(revs) {
+			before = revs[i]
+		}
+		after := revs[i-1]
+		compare(before, after)
+	}
+}
+
+func compare(beforeRef, afterRef string) {
 	fmt.Printf("compilecmp %s %s\n", beforeRef, afterRef)
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
