@@ -21,6 +21,9 @@ var (
 	flagCount = flag.Int("n", 15, "iterations")
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
+
+	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
+	flagAfterFlags  = flag.String("afterflags", "", "compiler flags for after")
 )
 
 var cwd string
@@ -63,7 +66,7 @@ func main() {
 }
 
 func compare(beforeRef, afterRef string) {
-	fmt.Printf("compilecmp %s %s\n", beforeRef, afterRef)
+	fmt.Printf("compilecmp %s %s %s %s\n", *flagBeforeFlags, beforeRef, *flagAfterFlags, afterRef)
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
@@ -72,8 +75,8 @@ func compare(beforeRef, afterRef string) {
 	start := time.Now()
 	for i := 0; i < *flagCount+1; i++ {
 		record := i != 0 // don't record the first run
-		before.bench(record)
-		after.bench(record)
+		before.bench(*flagBeforeFlags, record)
+		after.bench(*flagAfterFlags, record)
 		elapsed := time.Since(start)
 		avg := elapsed / time.Duration(i+1)
 		remain := (time.Duration(*flagCount - i)) * avg
@@ -104,7 +107,7 @@ type commit struct {
 	tmp *os.File
 }
 
-func (c *commit) bench(record bool) {
+func (c *commit) bench(compilerflags string, record bool) {
 	var args []string
 	if !*flagAll {
 		args = append(args, "-short")
@@ -114,6 +117,9 @@ func (c *commit) bench(record bool) {
 	}
 	if *flagRun != "" {
 		args = append(args, "-run", *flagRun)
+	}
+	if compilerflags != "" {
+		args = append(args, "-compileflags", compilerflags)
 	}
 	cmd := exec.Command("compilebench", args...)
 	path := "PATH=" + filepath.Join(c.dir, "bin")
