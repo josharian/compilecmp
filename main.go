@@ -22,6 +22,7 @@ var (
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
 
+	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
 	flagAfterFlags  = flag.String("afterflags", "", "compiler flags for after")
 )
@@ -66,7 +67,9 @@ func main() {
 }
 
 func compare(beforeRef, afterRef string) {
-	fmt.Printf("compilecmp %s %s %s %s\n", *flagBeforeFlags, beforeRef, *flagAfterFlags, afterRef)
+	beforeFlags := *flagFlags + " " + *flagBeforeFlags
+	afterFlags := *flagFlags + " " + *flagAfterFlags
+	fmt.Printf("compilecmp %s %s %s %s\n", beforeFlags, beforeRef, afterFlags, afterRef)
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
@@ -75,8 +78,8 @@ func compare(beforeRef, afterRef string) {
 	start := time.Now()
 	for i := 0; i < *flagCount+1; i++ {
 		record := i != 0 // don't record the first run
-		before.bench(*flagBeforeFlags, record)
-		after.bench(*flagAfterFlags, record)
+		before.bench(beforeFlags, record)
+		after.bench(afterFlags, record)
 		elapsed := time.Since(start)
 		avg := elapsed / time.Duration(i+1)
 		remain := (time.Duration(*flagCount - i)) * avg
@@ -118,7 +121,7 @@ func (c *commit) bench(compilerflags string, record bool) {
 	if *flagRun != "" {
 		args = append(args, "-run", *flagRun)
 	}
-	if compilerflags != "" {
+	if strings.TrimSpace(compilerflags) != "" {
 		args = append(args, "-compileflags", compilerflags)
 	}
 	cmd := exec.Command("compilebench", args...)
