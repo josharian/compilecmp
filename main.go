@@ -74,7 +74,7 @@ func compare(beforeRef, afterRef string) {
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
 	fmt.Println("after: ", after.dir)
-	fmt.Println("benchstat", before.tmp.Name(), after.tmp.Name())
+	fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
 	start := time.Now()
 	for i := 0; i < *flagCount+1; i++ {
 		record := i != 0 // don't record the first run
@@ -90,7 +90,7 @@ func compare(beforeRef, afterRef string) {
 	fmt.Println()
 	check(before.tmp.Close())
 	check(after.tmp.Close())
-	cmd := exec.Command("benchstat", before.tmp.Name(), after.tmp.Name())
+	cmd := exec.Command("benchstat", "-geomean", before.tmp.Name(), after.tmp.Name())
 	out, err := cmd.CombinedOutput()
 	check(err)
 	fmt.Println(string(out))
