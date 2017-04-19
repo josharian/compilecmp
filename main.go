@@ -129,7 +129,7 @@ func (c *commit) bench(compilerflags string, record bool) {
 	if sz, err := exec.LookPath("size"); err == nil {
 		path += ":" + filepath.Dir(sz)
 	}
-	cmd.Env = []string{path}
+	cmd.Env = append(os.Environ(), path)
 	out, err := cmd.CombinedOutput()
 	check(err)
 	if record {
