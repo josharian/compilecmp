@@ -78,8 +78,8 @@ func compare(beforeRef, afterRef string) {
 	start := time.Now()
 	for i := 0; i < *flagCount+1; i++ {
 		record := i != 0 // don't record the first run
-		before.bench(beforeFlags, record)
-		after.bench(afterFlags, record)
+		before.bench(beforeFlags, record, after.dir)
+		after.bench(afterFlags, record, after.dir)
 		elapsed := time.Since(start)
 		avg := elapsed / time.Duration(i+1)
 		remain := (time.Duration(*flagCount - i)) * avg
@@ -110,7 +110,7 @@ type commit struct {
 	tmp *os.File
 }
 
-func (c *commit) bench(compilerflags string, record bool) {
+func (c *commit) bench(compilerflags string, record bool, goroot string) {
 	var args []string
 	if !*flagAll {
 		args = append(args, "-short")
@@ -129,7 +129,7 @@ func (c *commit) bench(compilerflags string, record bool) {
 	if sz, err := exec.LookPath("size"); err == nil {
 		path += ":" + filepath.Dir(sz)
 	}
-	cmd.Env = append(os.Environ(), path)
+	cmd.Env = append(os.Environ(), path, "GOROOT="+goroot)
 	out, err := cmd.CombinedOutput()
 	check(err)
 	if record {
