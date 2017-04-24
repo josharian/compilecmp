@@ -75,26 +75,30 @@ func compare(beforeRef, afterRef string) {
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
 	fmt.Println("after: ", after.dir)
-	fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
-	start := time.Now()
-	for i := 0; i < *flagCount+1; i++ {
-		record := i != 0 // don't record the first run
-		before.bench(beforeFlags, record, after.dir)
-		after.bench(afterFlags, record, after.dir)
-		elapsed := time.Since(start)
-		avg := elapsed / time.Duration(i+1)
-		remain := (time.Duration(*flagCount - i)) * avg
-		remain /= time.Second
-		remain *= time.Second
-		fmt.Printf("\rcompleted % 4d of % 4d, estimated time remaining %v (eta %v)      ", i, *flagCount, remain, time.Now().Add(remain).Round(time.Second).Format(time.Kitchen))
+	if *flagCount > 0 {
+		fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
+		start := time.Now()
+		for i := 0; i < *flagCount+1; i++ {
+			record := i != 0 // don't record the first run
+			before.bench(beforeFlags, record, after.dir)
+			after.bench(afterFlags, record, after.dir)
+			elapsed := time.Since(start)
+			avg := elapsed / time.Duration(i+1)
+			remain := (time.Duration(*flagCount - i)) * avg
+			remain /= time.Second
+			remain *= time.Second
+			fmt.Printf("\rcompleted % 4d of % 4d, estimated time remaining %v (eta %v)      ", i, *flagCount, remain, time.Now().Add(remain).Round(time.Second).Format(time.Kitchen))
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 	check(before.tmp.Close())
 	check(after.tmp.Close())
-	cmd := exec.Command("benchstat", "-geomean", before.tmp.Name(), after.tmp.Name())
-	out, err := cmd.CombinedOutput()
-	check(err)
-	fmt.Println(string(out))
+	if *flagCount > 0 {
+		cmd := exec.Command("benchstat", "-geomean", before.tmp.Name(), after.tmp.Name())
+		out, err := cmd.CombinedOutput()
+		check(err)
+		fmt.Println(string(out))
+	}
 	// todo: notification
 }
 
