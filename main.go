@@ -137,7 +137,7 @@ func (c *commit) bench(compilerflags string, record bool, goroot string) {
 	if sz, err := exec.LookPath("size"); err == nil {
 		path += ":" + filepath.Dir(sz)
 	}
-	cmd.Env = append(os.Environ(), path, "GOROOT="+goroot)
+	cmd.Env = append(os.Environ(), path /*, "GOROOT="+goroot*/)
 	out, err := cmd.CombinedOutput()
 	check(err)
 	if record {
