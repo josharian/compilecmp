@@ -71,6 +71,8 @@ func compare(beforeRef, afterRef string) {
 	beforeFlags := *flagFlags + " " + *flagBeforeFlags
 	afterFlags := *flagFlags + " " + *flagAfterFlags
 	fmt.Printf("compilecmp %s %s %s %s\n", beforeFlags, beforeRef, afterFlags, afterRef)
+	fmt.Printf("%s: %s\n", beforeRef, commitmessage(beforeRef))
+	fmt.Printf("%s: %s\n", afterRef, commitmessage(afterRef))
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
 	fmt.Println("before:", before.dir)
@@ -200,4 +202,10 @@ func exists(path string) bool {
 	// can stat? it exists. good enough.
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func commitmessage(ref string) []byte {
+	b, err := git("log", "--format=%s", "-n", "1", ref)
+	check(err)
+	return b
 }
