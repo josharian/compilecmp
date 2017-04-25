@@ -19,6 +19,7 @@ var (
 	flagAll   = flag.Bool("all", false, "run all benchmarks, not just short ones")
 	flagCPU   = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
 	flagObj   = flag.Bool("obj", false, "report object file sizes")
+	flagPkg   = flag.String("pkg", "", "benchmark compilation of `pkg`")
 	flagCount = flag.Int("n", 15, "iterations")
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
@@ -127,6 +128,9 @@ func (c *commit) bench(compilerflags string, record bool, goroot string) {
 	}
 	if *flagObj {
 		args = append(args, "-obj")
+	}
+	if *flagPkg != "" {
+		args = append(args, "-pkg", *flagPkg)
 	}
 	if *flagRun != "" {
 		args = append(args, "-run", *flagRun)
