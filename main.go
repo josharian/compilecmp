@@ -71,14 +71,15 @@ func main() {
 func compare(beforeRef, afterRef string) {
 	beforeFlags := *flagFlags + " " + *flagBeforeFlags
 	afterFlags := *flagFlags + " " + *flagAfterFlags
-	fmt.Printf("compilecmp %s %s %s %s\n", beforeFlags, beforeRef, afterFlags, afterRef)
-	fmt.Printf("%s: %s\n", beforeRef, commitmessage(beforeRef))
-	fmt.Printf("%s: %s\n", afterRef, commitmessage(afterRef))
+	log.Printf("compilecmp %s %s %s %s", beforeFlags, beforeRef, afterFlags, afterRef)
+	log.Printf("%s: %s", beforeRef, commitmessage(beforeRef))
+	log.Printf("%s: %s", afterRef, commitmessage(afterRef))
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
-	fmt.Println("before:", before.dir)
-	fmt.Println("after: ", after.dir)
+	log.Printf("before: %s", before.dir)
+	log.Printf("after: %s", after.dir)
 	if *flagCount > 0 {
+		fmt.Println()
 		fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
 		start := time.Now()
 		for i := 0; i < *flagCount+1; i++ {
@@ -101,6 +102,7 @@ func compare(beforeRef, afterRef string) {
 		out, err := cmd.CombinedOutput()
 		check(err)
 		fmt.Println(string(out))
+		fmt.Println()
 	}
 	// todo: notification
 }
@@ -180,7 +182,7 @@ func worktree(ref string) commit {
 		dest += "-386"
 	}
 	if !exists(dest) {
-		log.Printf("copy tree at %s (%s) to %s", ref, sha, dest)
+		log.Printf("cp <%s> %s", ref, dest)
 		if _, err := git("worktree", "add", "--detach", dest, ref); err != nil {
 			log.Fatalf("could not create worktree for %q (%q): %v", ref, sha, err)
 		}
