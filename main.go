@@ -144,6 +144,7 @@ func (c *commit) bench(compilerflags string, record bool, goroot string) {
 		path += ":" + filepath.Dir(sz)
 	}
 	cmd.Env = append(os.Environ(), path /*, "GOROOT="+goroot*/)
+	cmd.Dir = c.dir
 	out, err := cmd.CombinedOutput()
 	check(err)
 	if record {
