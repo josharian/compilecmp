@@ -140,6 +140,7 @@ func (c *commit) bench(compilerflags string, record bool, goroot string) {
 	if strings.TrimSpace(compilerflags) != "" {
 		args = append(args, "-compileflags", compilerflags)
 	}
+	args = append(args, "-go="+filepath.Join(c.dir, "bin", "go"))
 	cmd := exec.Command("compilebench", args...)
 	path := "PATH=" + filepath.Join(c.dir, "bin")
 	if sz, err := exec.LookPath("size"); err == nil {
