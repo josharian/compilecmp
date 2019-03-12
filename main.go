@@ -187,14 +187,22 @@ func worktree(ref string) commit {
 			log.Fatalf("could not create worktree for %q (%q): %v", ref, sha, err)
 		}
 	}
+	var commands []string
 	cmdgo := filepath.Join(dest, "bin", "go")
-	if !exists(cmdgo) {
-		cmd := exec.Command("./make.bash")
+	if exists(cmdgo) {
+		// Make sure everything is built, just in case a prior make.bash got interrupted.
+		commands = append(commands, cmdgo+" install std cmd")
+	} else {
+		commands = append(commands, filepath.Join(dest, "src", "make.bash"))
+	}
+	for _, command := range commands {
+		args := strings.Split(command, " ")
+		cmd := exec.Command(args[0], args[1:]...)
 		if *flag386 {
 			cmd.Env = append(os.Environ(), "GOARCH=386", "GOHOSTARCH=386")
 		}
 		cmd.Dir = filepath.Join(dest, "src")
-		log.Printf("%s/make.bash", cmd.Dir)
+		log.Println(command)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Fatalf("%s", out)
