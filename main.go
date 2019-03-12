@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 	"time"
 )
 
@@ -104,7 +105,32 @@ func compare(beforeRef, afterRef string) {
 		fmt.Println(string(out))
 		fmt.Println()
 	}
+	fmt.Println()
+	compareBinaries(before, after)
 	// todo: notification
+}
+
+func compareBinaries(before, after commit) {
+	w := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
+	fmt.Fprintf(w, "file\tbefore\tafter\tchange\t\n")
+	for _, path := range []string{"bin/go", "pkg/tool/darwin_amd64/link", "pkg/tool/darwin_amd64/pprof", "pkg/tool/darwin_amd64/pack"} {
+		before := filesize(filepath.Join(before.dir, filepath.FromSlash(path)))
+		after := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
+		if before == 0 || after == 0 {
+			continue
+		}
+		name := filepath.Base(path)
+		fmt.Fprintf(w, "%s\t%d\t%d\t%+0.3f%%\t\n", name, before, after, 100*float64(after)/float64(before)-100)
+	}
+	w.Flush()
+}
+
+func filesize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
 }
 
 func check(err error) {
