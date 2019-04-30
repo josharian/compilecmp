@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -107,22 +108,41 @@ func compare(beforeRef, afterRef string) {
 	}
 	fmt.Println()
 	compareBinaries(before, after)
+	// TODO: compare all object files
+	fmt.Println()
 	// todo: notification
 }
 
 func compareBinaries(before, after commit) {
 	w := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
-	fmt.Fprintf(w, "file\tbefore\tafter\tchange\t\n")
-	for _, path := range []string{"bin/go", "pkg/tool/darwin_amd64/link", "pkg/tool/darwin_amd64/pprof", "pkg/tool/darwin_amd64/pack"} {
-		before := filesize(filepath.Join(before.dir, filepath.FromSlash(path)))
-		after := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
-		if before == 0 || after == 0 {
-			continue
+	fmt.Fprintln(w, "file\tbefore\tafter\tΔ\t%\t")
+	var totbefore, totafter int64
+	haschange := false
+	// TODO: use glob instead of hard-coding
+	for _, dir := range []string{"bin", "pkg/tool/" + runtime.GOOS + "_" + runtime.GOARCH} {
+		for _, base := range []string{"go", "addr2line", "api", "asm", "buildid", "cgo", "compile", "cover", "dist", "doc", "fix", "link", "nm", "objdump", "pack", "pprof", "test2json", "trace", "vet"} {
+			path := filepath.FromSlash(dir + "/" + base)
+			before := filesize(filepath.Join(before.dir, path))
+			after := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
+			if before == 0 || after == 0 {
+				continue
+			}
+			totbefore += before
+			totafter += after
+			if before == after {
+				continue
+			}
+			haschange = true
+			name := filepath.Base(path)
+			fmt.Fprintf(w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", name, before, after, after-before, 100*float64(after)/float64(before)-100)
 		}
-		name := filepath.Base(path)
-		fmt.Fprintf(w, "%s\t%d\t%d\t%+0.3f%%\t\n", name, before, after, 100*float64(after)/float64(before)-100)
 	}
-	w.Flush()
+	if haschange {
+		fmt.Fprintf(w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", "total", totbefore, totafter, totafter-totbefore, 100*float64(totafter)/float64(totbefore)-100)
+		w.Flush()
+	} else {
+		fmt.Println("no binary size changes")
+	}
 }
 
 func filesize(path string) int64 {
