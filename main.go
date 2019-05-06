@@ -255,6 +255,10 @@ func worktree(ref string) commit {
 			log.Fatalf("%s", out)
 		}
 	}
+	// These deletions are best effort.
+	// See https://github.com/golang/go/issues/31851 for context.
+	os.RemoveAll(filepath.Join(dest, "pkg", "obj"))
+	os.RemoveAll(filepath.Join(dest, "pkg", "bootstrap"))
 	tmp, err := ioutil.TempFile("", "")
 	check(err)
 	return commit{ref: ref, sha: sha, dir: dest, tmp: tmp}
