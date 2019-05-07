@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -119,41 +120,95 @@ func compare(beforeRef, afterRef string) {
 	}
 	fmt.Println()
 	compareBinaries(before, after)
-	// TODO: compare all object files
 	fmt.Println()
+	if *flagObj {
+		compareObjectFiles(before, after)
+		fmt.Println()
+	}
 	// todo: notification
 }
 
-func compareBinaries(before, after commit) {
-	w := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
+type filesizes struct {
+	totbefore int64
+	totafter  int64
+	haschange bool
+	out       io.Writer
+	w         *tabwriter.Writer
+}
+
+func newFilesizes(out io.Writer) *filesizes {
+	w := tabwriter.NewWriter(out, 8, 8, 1, ' ', 0)
 	fmt.Fprintln(w, "file\tbefore\tafter\tΔ\t%\t")
-	var totbefore, totafter int64
-	haschange := false
+	sizes := new(filesizes)
+	sizes.w = w
+	sizes.out = out
+	return sizes
+}
+
+func (s *filesizes) add(name string, beforeSize, afterSize int64) {
+	if beforeSize == 0 || afterSize == 0 {
+		return
+	}
+	s.totbefore += beforeSize
+	s.totafter += afterSize
+	if beforeSize == afterSize {
+		return
+	}
+	s.haschange = true
+	fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", name, beforeSize, afterSize, afterSize-beforeSize, 100*float64(afterSize)/float64(beforeSize)-100)
+}
+
+func (s *filesizes) flush(desc string) {
+	if s.haschange {
+		fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", "total", s.totbefore, s.totafter, s.totafter-s.totbefore, 100*float64(s.totafter)/float64(s.totbefore)-100)
+		s.w.Flush()
+		return
+	}
+	fmt.Fprintf(s.out, "no %s size changes\n", desc)
+}
+
+func compareBinaries(before, after commit) {
+	sizes := newFilesizes(os.Stdout)
 	// TODO: use glob instead of hard-coding
 	for _, dir := range []string{"bin", "pkg/tool/" + runtime.GOOS + "_" + runtime.GOARCH} {
 		for _, base := range []string{"go", "addr2line", "api", "asm", "buildid", "cgo", "compile", "cover", "dist", "doc", "fix", "link", "nm", "objdump", "pack", "pprof", "test2json", "trace", "vet"} {
 			path := filepath.FromSlash(dir + "/" + base)
-			before := filesize(filepath.Join(before.dir, path))
-			after := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
-			if before == 0 || after == 0 {
-				continue
-			}
-			totbefore += before
-			totafter += after
-			if before == after {
-				continue
-			}
-			haschange = true
+			beforeSize := filesize(filepath.Join(before.dir, path))
+			afterSize := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
 			name := filepath.Base(path)
-			fmt.Fprintf(w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", name, before, after, after-before, 100*float64(after)/float64(before)-100)
+			sizes.add(name, beforeSize, afterSize)
 		}
 	}
-	if haschange {
-		fmt.Fprintf(w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", "total", totbefore, totafter, totafter-totbefore, 100*float64(totafter)/float64(totbefore)-100)
-		w.Flush()
-	} else {
-		fmt.Println("no binary size changes")
+	sizes.flush("binary")
+}
+
+func compareObjectFiles(before, after commit) {
+	pkg := filepath.Join(before.dir, "pkg")
+	var files []string
+	err := filepath.Walk(pkg, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".a") || !strings.HasPrefix(path, pkg) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	check(err)
+	sizes := newFilesizes(os.Stdout)
+	for _, beforePath := range files {
+		suff := beforePath[len(pkg):]
+		afterPath := filepath.Join(after.dir, "pkg", suff)
+		beforeSize := filesize(beforePath)
+		afterSize := filesize(afterPath)
+		// suff is of the form /arch/. Remove that.
+		suff = filepath.ToSlash(suff)
+		suff = suff[1:]                              // remove leading slash
+		suff = suff[strings.IndexByte(suff, '/')+1:] // remove next slash
+		sizes.add(suff, beforeSize, afterSize)
 	}
+	sizes.flush("object file")
 }
 
 func filesize(path string) int64 {
