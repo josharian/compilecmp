@@ -53,6 +53,17 @@ func main() {
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
 	}
+
+	// Clean up unused worktrees to avoid error under the following circumstances:
+	// * run compilecmp ref1 ref2
+	// * rm -r ~/.compilecmp
+	// * run compilecmp ref1 ref2
+	// git gets confused because it thinks ref1 and ref2 have worktrees.
+	// Pruning fixes that.
+	if _, err := git("worktree", "prune"); err != nil {
+		log.Fatalf("could not prune worktrees: %v", err)
+	}
+
 	if !*flagEach {
 		compare(beforeRef, afterRef)
 		return
