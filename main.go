@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -26,6 +28,7 @@ var (
 	flagCount = flag.Int("n", 15, "iterations")
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
+	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
@@ -44,6 +47,20 @@ func main() {
 	flag.Parse()
 	beforeRef := "master"
 	afterRef := "HEAD"
+	if flagCL != nil {
+		if flag.NArg() > 0 {
+			log.Fatal("-cl NNN is incompatible with ref arguments")
+		}
+		clHead, parent, err := clHeadAndParent(*flagCL)
+		if err != nil {
+			log.Fatalf("failed to get CL %s information: %v", *flagCL, err)
+		}
+		if parent == "" {
+			log.Fatal("CL does not have parent")
+		}
+		beforeRef = parent
+		afterRef = clHead
+	}
 	switch flag.NArg() {
 	case 0:
 	case 1:
@@ -340,4 +357,52 @@ func commitmessage(ref string) []byte {
 	b, err := git("log", "--format=%s", "-n", "1", ref)
 	check(err)
 	return b
+}
+
+// clHeadAndParent fetches the given CL to local, returns the CL HEAD and its parents commits.
+func clHeadAndParent(cl int) (string, string, error) {
+	clUrlFormat := "https://go-review.googlesource.com/changes/%d/?o=CURRENT_REVISION&o=ALL_COMMITS"
+	resp, err := http.Get(fmt.Sprintf(clUrlFormat, cl))
+	if err != nil {
+		return "", "", err
+	}
+
+	// Work around https://code.google.com/p/gerrit/issues/detail?id=3540
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+	body = bytes.TrimPrefix(body, []byte(")]}'"))
+
+	var parse struct {
+		CurrentRevision string `json:"current_revision"`
+		Revisions       map[string]struct {
+			Fetch struct {
+				HTTP struct {
+					URL string
+					Ref string
+				}
+			}
+			Commit struct {
+				Parents []struct {
+					Commit string
+				}
+			}
+		}
+	}
+
+	if err := json.Unmarshal(body, &parse); err != nil {
+		return "", "", err
+	}
+	parent := ""
+	if len(parse.Revisions[parse.CurrentRevision].Commit.Parents) > 0 {
+		parent = parse.Revisions[parse.CurrentRevision].Commit.Parents[0].Commit
+	}
+
+	ref := parse.Revisions[parse.CurrentRevision].Fetch.HTTP
+
+	if _, err := git("fetch", ref.URL, ref.Ref); err != nil {
+		return "", "", err
+	}
+	return parse.CurrentRevision, parent, nil
 }
