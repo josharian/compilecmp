@@ -47,7 +47,7 @@ func main() {
 	flag.Parse()
 	beforeRef := "master"
 	afterRef := "HEAD"
-	if flagCL != nil {
+	if *flagCL != 0 {
 		if flag.NArg() > 0 {
 			log.Fatal("-cl NNN is incompatible with ref arguments")
 		}
