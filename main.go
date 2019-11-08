@@ -28,7 +28,7 @@ var (
 	flagCount = flag.Int("n", 15, "iterations")
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
-	flagCl    = flag.String("cl", "", "run benchmark on CL number")
+	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
@@ -47,14 +47,18 @@ func main() {
 	flag.Parse()
 	beforeRef := "master"
 	afterRef := "HEAD"
-	if flagCl != nil {
-		clHead, parent, err := clHeadAndParent(*flagCl)
+	if flagCL != nil {
+		if flag.NArg() > 0 {
+			log.Fatal("-cl NNN is incompatible with ref arguments")
+		}
+		clHead, parent, err := clHeadAndParent(*flagCL)
 		if err != nil {
-			log.Fatalf("failed to get CL %s information", *flagCl)
+			log.Fatalf("failed to get CL %s information: %v", *flagCL, err)
 		}
-		if parent != "" {
-			beforeRef = parent
+		if parent == "" {
+			log.Fatal("CL does not have parent")
 		}
+		beforeRef = parent
 		afterRef = clHead
 	}
 	switch flag.NArg() {
@@ -62,10 +66,8 @@ func main() {
 	case 1:
 		beforeRef = flag.Arg(0)
 	case 2:
-		if flagCl == nil {
-			beforeRef = flag.Arg(0)
-			afterRef = flag.Arg(1)
-		}
+		beforeRef = flag.Arg(0)
+		afterRef = flag.Arg(1)
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
 	}
@@ -358,8 +360,8 @@ func commitmessage(ref string) []byte {
 }
 
 // clHeadAndParent fetches the given CL to local, returns the CL HEAD and its parents commits.
-func clHeadAndParent(cl string) (string, string, error) {
-	clUrlFormat := "https://go-review.googlesource.com/changes/%s/?o=CURRENT_REVISION&o=ALL_COMMITS"
+func clHeadAndParent(cl int) (string, string, error) {
+	clUrlFormat := "https://go-review.googlesource.com/changes/%d/?o=CURRENT_REVISION&o=ALL_COMMITS"
 	resp, err := http.Get(fmt.Sprintf(clUrlFormat, cl))
 	if err != nil {
 		return "", "", err
