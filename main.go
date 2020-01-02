@@ -38,6 +38,7 @@ var (
 var cwd string
 
 func main() {
+	// todo: limit to n old compilecmp directories, maybe sort by atime? mtime?
 	log.SetFlags(log.Ltime)
 	var err error
 	cwd, err = os.Getwd()
