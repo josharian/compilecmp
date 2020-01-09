@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,7 +15,9 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -29,6 +33,7 @@ var (
 	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
 	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
+	flagFn    = flag.String("fn", "", "find changed functions: all, changed, better, worse, stats, or help")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
@@ -71,6 +76,22 @@ func main() {
 		afterRef = flag.Arg(1)
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
+	}
+
+	switch *flagFn {
+	case "", "all", "changed", "better", "worse", "stats":
+	case "help":
+		fallthrough
+	default:
+		fmt.Fprintln(os.Stdout, `
+all: print all functions whose contents have changed, regardless of whether their text size changed
+changed: print only functions whose text size has changed
+better: print only functions whose text size has gotten smaller
+worse: print only functions whose text size has gotten bigger
+stats: print only the summary (per package function size total)
+help: print this message and exit
+`[1:])
+		os.Exit(2)
 	}
 
 	// Clean up unused worktrees to avoid error under the following circumstances:
@@ -143,7 +164,245 @@ func compare(beforeRef, afterRef string) {
 		compareObjectFiles(before, after)
 		fmt.Println()
 	}
+	if *flagFn != "" {
+		compareFunctions(before, after)
+		fmt.Println()
+	}
 	// todo: notification
+}
+
+func compareFunctions(before, after commit) {
+	await, ascan := streamDashS(before)
+	bwait, bscan := streamDashS(after)
+	compareFuncScanners(ascan, bscan)
+	await()
+	bwait()
+}
+
+const (
+	ansiBold     = "\u001b[1m"
+	ansiDim      = "\u001b[2m"
+	ansiFgRed    = "\u001b[31m"
+	ansiFgGreen  = "\u001b[32m"
+	ansiFgYellow = "\u001b[33m"
+	ansiFgBlue   = "\u001b[36m"
+	ansiFgWhite  = "\u001b[37m"
+	ansiReset    = "\u001b[0m"
+)
+
+func compareFuncScanners(a, b *bufio.Scanner) {
+	sizesBuf := new(bytes.Buffer)
+	sizes := newFilesizes(sizesBuf)
+	for a.Scan() && b.Scan() {
+		aidx := bytes.IndexByte(a.Bytes(), '\n')
+		bidx := bytes.IndexByte(b.Bytes(), '\n')
+		pkg := a.Bytes()[:aidx]
+		pkg2 := b.Bytes()[:bidx]
+		if !bytes.Equal(pkg, pkg2) {
+			log.Fatalf("-fn does not yet handle added/deleted packages, got %s != %s", pkg, pkg2)
+		}
+		// skip identical packages
+		if bytes.Equal(a.Bytes(), b.Bytes()) {
+			continue
+		}
+		needsHeader := true
+		printHeader := func() {
+			if !needsHeader {
+				return
+			}
+			fmt.Printf("\n%s%s%s%s\n", ansiFgYellow, ansiBold, pkg, ansiReset)
+			needsHeader = false
+		}
+		aPkg := parseDashSPackage(a.Bytes()[aidx:])
+		bPkg := parseDashSPackage(b.Bytes()[bidx:])
+		var aTot, bTot int
+		for name, asf := range aPkg {
+			aTot += asf.textsize
+			bsf, ok := bPkg[name]
+			if !ok {
+				if *flagFn != "stats" {
+					printHeader()
+					fmt.Println("DELETED", name)
+				}
+				continue
+			}
+			delete(bPkg, name)
+			bTot += bsf.textsize
+			if bytes.Equal(asf.bodyhash, bsf.bodyhash) {
+				continue
+			}
+			// TODO: option to show these
+			if asf.textsize == bsf.textsize {
+				if *flagFn == "all" {
+					printHeader()
+					fmt.Print(ansiFgBlue)
+					fmt.Println(name, "changed")
+					fmt.Print(ansiReset)
+				}
+				// TODO: option for this?
+				// diff.Text("a", "b", asf.body, bsf.body, os.Stdout)
+				continue
+			}
+			color := ""
+			show := true
+			if asf.textsize < bsf.textsize {
+				if *flagFn == "better" || *flagFn == "stats" {
+					show = false
+				}
+				color = ansiFgRed
+			} else {
+				if *flagFn == "worse" || *flagFn == "stats" {
+					show = false
+				}
+				color = ansiFgGreen
+			}
+			if show {
+				printHeader()
+				fmt.Print(color)
+				fmt.Println(strings.TrimPrefix(name, `"".`), asf.textsize, "->", bsf.textsize)
+				fmt.Print(ansiReset)
+			}
+		}
+		for name, bsf := range bPkg {
+			if *flagFn != "stats" {
+				printHeader()
+				fmt.Println("INSERTED", name)
+			}
+			bTot += bsf.textsize
+		}
+		sizes.add(string(pkg)[len("# "):]+".s", int64(aTot), int64(bTot))
+		// TODO: option to print these
+		// printHeader()
+		// if aTot == bTot {
+		// 	fmt.Print(ansiFgBlue)
+		// } else if aTot < bTot {
+		// 	fmt.Print(ansiFgRed)
+		// } else {
+		// 	fmt.Print(ansiFgGreen)
+		// }
+		// // TODO: instead, save totals and print at end
+		// fmt.Printf("%sTOTAL %d -> %d%s\n", ansiBold, aTot, bTot, ansiReset)
+	}
+	sizes.flush("text size")
+	fmt.Println()
+	io.Copy(os.Stdout, sizesBuf)
+	check(a.Err())
+	check(b.Err())
+}
+
+type stextFunc struct {
+	textsize int    // length in instructions of the function
+	bodyhash []byte // hash of -S output for the function
+	body     string
+}
+
+func extractNameAndSize(stext string) (string, int) {
+	i := strings.IndexByte(stext, ' ')
+	name := stext[:i]
+	stext = stext[i:]
+	i = strings.Index(stext, " size=")
+	stext = stext[i+len(" size="):]
+	i = strings.Index(stext, " ")
+	stext = stext[:i]
+	n, err := strconv.Atoi(stext)
+	check(err)
+	return name, n
+}
+
+var dashSInstructionDump = regexp.MustCompile("\t0x[0-9a-f]+( [0-9a-f]{2}){16}  ")
+
+func parseDashSPackage(b []byte) map[string]stextFunc {
+	m := make(map[string]stextFunc)
+	scan := bufio.NewScanner(bytes.NewReader(b))
+	h := sha256.New()
+	var stext string
+	var body []byte
+	for scan.Scan() {
+		if len(scan.Bytes()) == 0 || scan.Bytes()[0] != '\t' {
+			if stext != "" && strings.Contains(stext, " STEXT ") {
+				name, size := extractNameAndSize(stext)
+				m[name] = stextFunc{
+					textsize: size,
+					bodyhash: h.Sum(nil),
+					body:     string(body),
+				}
+			}
+			h.Reset()
+			body = nil
+			stext = scan.Text()
+			continue
+		}
+		h.Write(scan.Bytes())
+		h.Write([]byte{'\n'})
+		if dashSInstructionDump.Match(scan.Bytes()) {
+			continue
+		}
+		if bytes.HasPrefix(scan.Bytes(), []byte("\trel ")) {
+			continue
+		}
+		// TODO: resuscite if we want to support producing diffs
+		// body = append(body, scan.Bytes()...)
+		// body = append(body, '\n')
+	}
+	if stext != "" && strings.Contains(stext, "STEXT") {
+		name, size := extractNameAndSize(stext)
+		m[name] = stextFunc{
+			textsize: size,
+			bodyhash: h.Sum(nil),
+			body:     string(body),
+		}
+	}
+	check(scan.Err())
+	return m
+}
+
+func scannerForDashS(r io.Reader, sha []byte) *bufio.Scanner {
+	scanPackages := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+
+		// Look for "\n# pkgname\n".
+		if i := bytes.Index(data, []byte("\n#")); i >= 0 {
+			// # pkgname
+			j := bytes.IndexByte(data[i:], '\n')
+			if j < 0 {
+				// need more data
+				return 0, nil, nil
+			}
+			r := bytes.ReplaceAll(data[:i+j], sha, []byte("SHA"))
+			return i + j + 1, r, nil
+		}
+
+		// If we're at EOF, return whatever is left.
+		if atEOF {
+			r := bytes.ReplaceAll(data, sha, []byte("SHA"))
+			return len(data), r, nil
+		}
+
+		// Request more data.
+		return 0, nil, nil
+	}
+
+	scan := bufio.NewScanner(r)
+	scan.Split(scanPackages)
+	scan.Buffer(nil, 1<<30)
+	return scan
+}
+
+func streamDashS(c commit) (wait func(), scan *bufio.Scanner) {
+	cmdgo := filepath.Join(c.dir, "bin", "go")
+	cmd := exec.Command(cmdgo, "build", "-p=1", "-gcflags=all=-S -dwarf=false", "std", "cmd")
+	pipe, err := cmd.StderrPipe()
+	check(err)
+	err = cmd.Start()
+	check(err)
+	wait = func() {
+		err := cmd.Wait()
+		check(err)
+	}
+	scan = scannerForDashS(pipe, []byte(c.sha))
+	return
 }
 
 type filesizes struct {
