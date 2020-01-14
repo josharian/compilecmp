@@ -554,7 +554,7 @@ func git(args ...string) ([]byte, error) {
 
 func resolve(ref string) string {
 	// Resolve ref to a sha1.
-	out, err := git("rev-parse", ref)
+	out, err := git("rev-parse", "--short", ref)
 	if err != nil {
 		log.Fatalf("could not resolve ref %q: %v", ref, err)
 	}
