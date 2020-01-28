@@ -30,7 +30,6 @@ var (
 	flagObj   = flag.Bool("obj", false, "report object file sizes")
 	flagPkg   = flag.String("pkg", "", "benchmark compilation of `pkg`")
 	flagCount = flag.Int("n", 15, "iterations")
-	flag386   = flag.Bool("386", false, "run in 386 mode")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
 	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
 	flagFn    = flag.String("fn", "", "find changed functions: all, changed, better, worse, stats, or help")
@@ -569,9 +568,6 @@ func worktree(ref string) commit {
 	}
 	sha := resolve(ref)
 	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
-	if *flag386 {
-		dest += "-386"
-	}
 	if !exists(dest) {
 		log.Printf("cp <%s> %s", ref, dest)
 		if _, err := git("worktree", "add", "--detach", dest, ref); err != nil {
@@ -589,9 +585,6 @@ func worktree(ref string) commit {
 	for _, command := range commands {
 		args := strings.Split(command, " ")
 		cmd := exec.Command(args[0], args[1:]...)
-		if *flag386 {
-			cmd.Env = append(os.Environ(), "GOARCH=386", "GOHOSTARCH=386")
-		}
 		cmd.Dir = filepath.Join(dest, "src")
 		log.Println(command)
 		out, err := cmd.CombinedOutput()
