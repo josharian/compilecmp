@@ -19,21 +19,23 @@ import (
 	"time"
 )
 
+const debug = false // print commands as they are run
+
 var (
 	flagRun   = flag.String("run", "", "run benchmarks matching regex")
 	flagAll   = flag.Bool("all", false, "run all benchmarks, not just short ones")
 	flagCPU   = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
 	flagObj   = flag.Bool("obj", false, "report object file sizes")
 	flagPkg   = flag.String("pkg", "", "benchmark compilation of `pkg`")
-	flagCount = flag.Int("n", 15, "iterations")
+	flagCount = flag.Int("n", 0, "iterations")
 	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
 	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
-	flagFn    = flag.String("fn", "", "find changed functions: all, changed, better, worse, stats, or help")
+	flagFn    = flag.String("fn", "", "find changed functions: all, changed, smaller, bigger, stats, or help")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
 	flagAfterFlags  = flag.String("afterflags", "", "compiler flags for after")
-	flagPlatform    = flag.String("platform", "", "platform for use for comparing object file sizes")
+	flagPlatforms   = flag.String("platforms", "", "comma-separated list of platforms to compile for; all=all platforms, arch=one platform per arch")
 )
 
 var cwd string
@@ -41,8 +43,8 @@ var cwd string
 func main() {
 	// todo: limit to n old compilecmp directories, maybe sort by atime? mtime?
 	flag.Parse()
+	log.SetFlags(0)
 
-	log.SetFlags(log.Ltime)
 	var err error
 	cwd, err = os.Getwd()
 	if err != nil {
@@ -76,15 +78,15 @@ func main() {
 	}
 
 	switch *flagFn {
-	case "", "all", "changed", "better", "worse", "stats":
+	case "", "all", "changed", "smaller", "bigger", "stats":
 	case "help":
 		fallthrough
 	default:
 		fmt.Fprintln(os.Stdout, `
 all: print all functions whose contents have changed, regardless of whether their text size changed
 changed: print only functions whose text size has changed
-better: print only functions whose text size has gotten smaller
-worse: print only functions whose text size has gotten bigger
+smaller: print only functions whose text size has gotten smaller
+bigger: print only functions whose text size has gotten bigger
 stats: print only the summary (per package function size total)
 help: print this message and exit
 `[1:])
@@ -101,10 +103,11 @@ help: print this message and exit
 		log.Fatalf("could not prune worktrees: %v", err)
 	}
 
+	compare(beforeRef, afterRef)
 	if !*flagEach {
-		compare(beforeRef, afterRef)
 		return
 	}
+
 	list, err := git("rev-list", afterRef, beforeRef+".."+afterRef)
 	check(err)
 	revs := strings.Fields(string(list))
@@ -114,21 +117,88 @@ help: print this message and exit
 			before = revs[i]
 		}
 		after := revs[i-1]
+		fmt.Println("---")
 		compare(before, after)
 	}
 }
 
+func combineFlags(x, y string) string {
+	x = strings.TrimSpace(x)
+	y = strings.TrimSpace(y)
+	switch {
+	case x == "":
+		return y
+	case y == "":
+		return x
+	}
+	return x + " " + y
+}
+
+func printcommit(ref string) {
+	sha := resolve(ref)
+	if !strings.HasPrefix(ref, sha) {
+		fmt.Printf("%s (%s): %s\n", ref, sha, commitmessage(sha))
+	} else {
+		fmt.Printf("%s: %s\n", sha, commitmessage(sha))
+	}
+}
+
+func allPlatforms() []string {
+	cmd := exec.Command("go", "tool", "dist", "list")
+	out, err := cmd.CombinedOutput()
+	check(err)
+	out = bytes.TrimSpace(out)
+	return strings.Split(string(out), "\n")
+}
+
 func compare(beforeRef, afterRef string) {
-	platform := *flagPlatform
-	beforeFlags := *flagFlags + " " + *flagBeforeFlags
-	afterFlags := *flagFlags + " " + *flagAfterFlags
-	log.Printf("compilecmp %s %s %s %s", beforeFlags, beforeRef, afterFlags, afterRef)
-	log.Printf("%s: %s", beforeRef, commitmessage(beforeRef))
-	log.Printf("%s: %s", afterRef, commitmessage(afterRef))
+	var platforms []string
+	switch *flagPlatforms {
+	case "all":
+		platforms = allPlatforms()
+	case "arch":
+		// one platform per architecture
+		// in practice, right now, this means linux/* and js/wasm
+		all := allPlatforms()
+		for _, platform := range all {
+			goos, goarch := parsePlatform(platform)
+			if goos == "linux" || goarch == "wasm" {
+				platforms = append(platforms, platform)
+			}
+		}
+	default:
+		platforms = strings.Split(*flagPlatforms, ",")
+	}
+	for _, platform := range platforms {
+		comparePlatform(platform, beforeRef, afterRef)
+	}
+}
+
+func comparePlatform(platform, beforeRef, afterRef string) {
+	fmt.Printf("compilecmp %s -> %s\n", beforeRef, afterRef)
+	printcommit(beforeRef)
+	printcommit(afterRef)
+
+	if platform != "" {
+		fmt.Printf("platform: %s\n", platform)
+	}
+
+	beforeFlags := combineFlags(*flagFlags, *flagBeforeFlags)
+	if beforeFlags != "" {
+		fmt.Printf("before flags: %s\n", beforeFlags)
+	}
+	afterFlags := combineFlags(*flagFlags, *flagAfterFlags)
+	if afterFlags != "" {
+		fmt.Printf("after flags: %s\n", afterFlags)
+	}
+
 	before := worktree(beforeRef)
 	after := worktree(afterRef)
-	log.Printf("before: %s", before.dir)
-	log.Printf("after: %s", after.dir)
+	if debug {
+		fmt.Printf("before GOROOT: %s\n", before.dir)
+		fmt.Printf("after GOROOT: %s\n", after.dir)
+	}
+
 	if *flagCount > 0 {
 		fmt.Println()
 		fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
@@ -386,7 +456,9 @@ func worktree(ref string) commit {
 	sha := resolve(ref)
 	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
 	if !exists(dest) {
-		log.Printf("cp <%s> %s", ref, dest)
+		if debug {
+			fmt.Printf("cp <%s> %s\n", ref, dest)
+		}
 		if _, err := git("worktree", "add", "--detach", dest, ref); err != nil {
 			log.Fatalf("could not create worktree for %q (%q): %v", ref, sha, err)
 		}
@@ -403,7 +475,9 @@ func worktree(ref string) commit {
 		args := strings.Split(command, " ")
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = filepath.Join(dest, "src")
-		log.Println(command)
+		if debug {
+			fmt.Println(command)
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Fatalf("%s", out)
