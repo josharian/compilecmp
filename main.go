@@ -119,6 +119,7 @@ help: print this message and exit
 }
 
 func compare(beforeRef, afterRef string) {
+	platform := *flagPlatform
 	beforeFlags := *flagFlags + " " + *flagBeforeFlags
 	afterFlags := *flagFlags + " " + *flagAfterFlags
 	log.Printf("compilecmp %s %s %s %s", beforeFlags, beforeRef, afterFlags, afterRef)
@@ -134,8 +135,8 @@ func compare(beforeRef, afterRef string) {
 		start := time.Now()
 		for i := 0; i < *flagCount+1; i++ {
 			record := i != 0 // don't record the first run
-			before.bench(beforeFlags, record, after.dir)
-			after.bench(afterFlags, record, after.dir)
+			before.bench(platform, beforeFlags, record, after.dir)
+			after.bench(platform, afterFlags, record, after.dir)
 			elapsed := time.Since(start)
 			avg := elapsed / time.Duration(i+1)
 			remain := (time.Duration(*flagCount - i)) * avg
@@ -155,7 +156,6 @@ func compare(beforeRef, afterRef string) {
 		fmt.Println()
 	}
 	fmt.Println()
-	platform := *flagPlatform
 	if platform != "" {
 		before.cmdgo(platform, "install", "std", "cmd")
 		after.cmdgo(platform, "install", "std", "cmd")
@@ -325,7 +325,7 @@ func (c *commit) cmdgo(platform string, args ...string) []byte {
 	return out
 }
 
-func (c *commit) bench(compilerflags string, record bool, goroot string) {
+func (c *commit) bench(platform, compilerflags string, record bool, goroot string) {
 	var args []string
 	if !*flagAll {
 		args = append(args, "-short")
@@ -351,7 +351,8 @@ func (c *commit) bench(compilerflags string, record bool, goroot string) {
 	if sz, err := exec.LookPath("size"); err == nil {
 		path += ":" + filepath.Dir(sz)
 	}
-	cmd.Env = append(os.Environ(), path /*, "GOROOT="+goroot*/)
+	goos, goarch := parsePlatform(platform)
+	cmd.Env = append(os.Environ(), path, "GOOS="+goos, "GOARCH="+goarch)
 	cmd.Dir = c.dir
 	out, err := cmd.CombinedOutput()
 	check(err)
