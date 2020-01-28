@@ -44,13 +44,14 @@ var cwd string
 
 func main() {
 	// todo: limit to n old compilecmp directories, maybe sort by atime? mtime?
+	flag.Parse()
+
 	log.SetFlags(log.Ltime)
 	var err error
 	cwd, err = os.Getwd()
 	if err != nil {
 		log.Fatalf("could not working dir: %v", err)
 	}
-	flag.Parse()
 	beforeRef := "master"
 	afterRef := "HEAD"
 	if *flagCL != 0 {
