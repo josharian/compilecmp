@@ -174,7 +174,7 @@ func scanDashS(r io.Reader, sha []byte, c chan<- *pkgScanner) {
 		if len(b) == 0 {
 			continue
 		}
-		if b[0] == '#' && b[1] == ' ' {
+		if len(b) >= 2 && b[0] == '#' && b[1] == ' ' {
 			// Found new package.
 			// If we were working on a package, flush and emit it.
 			if pkgscan != nil {
