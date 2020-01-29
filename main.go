@@ -42,7 +42,6 @@ var (
 var cwd string
 
 func main() {
-	// todo: limit to n old compilecmp directories, maybe sort by atime? mtime?
 	flag.Parse()
 	log.SetFlags(0)
 
@@ -243,7 +242,7 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 		compareFunctions(platform, before, after)
 		fmt.Println()
 	}
-	// todo: notification
+	// todo: notification?
 }
 
 const (
