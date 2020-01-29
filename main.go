@@ -88,6 +88,11 @@ func main() {
 	default:
 		log.Fatal("usage: compilecmp [before-git-ref] [after-git-ref]")
 	}
+	// Resolve immediately, for two reasons:
+	// catch ref problems early,
+	// and lock in stone the resolution in case the user changes branches
+	resolve(beforeRef)
+	resolve(afterRef)
 
 	switch *flagFn {
 	case "", "all", "changed", "smaller", "bigger", "stats":
@@ -151,6 +156,7 @@ func printcommit(ref string) {
 	if !strings.HasPrefix(ref, sha) {
 		fmt.Printf("%s (%s): %s\n", ref, sha, commitmessage(sha))
 	} else {
+		// TODO: try rev-parse to get a "pretty" name for this ref.
 		fmt.Printf("%s: %s\n", sha, commitmessage(sha))
 	}
 }
@@ -454,13 +460,25 @@ func git(args ...string) ([]byte, error) {
 	return bytes.TrimSpace(out), err
 }
 
+var (
+	resolveMu sync.Mutex
+	resolved  = map[string]string{} // ref -> sha
+)
+
 func resolve(ref string) string {
+	resolveMu.Lock()
+	defer resolveMu.Unlock()
+	if sha, ok := resolved[ref]; ok {
+		return sha
+	}
 	// Resolve ref to a sha1.
 	out, err := git("rev-parse", "--short", ref)
 	if err != nil {
 		log.Fatalf("could not resolve ref %q: %v", ref, err)
 	}
-	return string(out)
+	sha := string(out)
+	resolved[ref] = sha
+	return sha
 }
 
 func worktree(ref string) commit {
