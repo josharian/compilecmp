@@ -58,7 +58,7 @@ func main() {
 		}
 		clHead, parent, err := clHeadAndParent(*flagCL)
 		if err != nil {
-			log.Fatalf("failed to get CL %s information: %v", *flagCL, err)
+			log.Fatalf("failed to get CL %d information: %v", *flagCL, err)
 		}
 		if parent == "" {
 			log.Fatal("CL does not have parent")
