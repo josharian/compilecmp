@@ -389,9 +389,7 @@ func (c *commit) cmdgo(platform string, args ...string) []byte {
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch)
 	cmd.Dir = filepath.Join(c.dir, "src")
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	return out
 }
 
@@ -450,9 +448,7 @@ func resolve(ref string) string {
 
 func worktree(ref string) commit {
 	u, err := user.Current()
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	sha := resolve(ref)
 	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
 	if !exists(dest) {
