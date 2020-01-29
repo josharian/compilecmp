@@ -565,6 +565,7 @@ func cleanCache() {
 	// that are no longer contained in any branch, and delete them.
 	// This is the most common way to end up accumulating
 	// lots of junk in .compilecmp.
+	// TODO: gate concurrently filesystem access here?
 	var wg sync.WaitGroup
 	for _, fi := range fis {
 		if !fi.IsDir() {
@@ -593,4 +594,6 @@ func cleanCache() {
 	wg.Wait()
 
 	// TODO: also look for very old versions?
+	// We could do this by always touching (say) GOROOT/VERSION
+	// every time we use a worktree, and then looking at last mtime.
 }
