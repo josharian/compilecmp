@@ -1,8 +1,10 @@
 compilecmp is a bit of a Swiss Army knife for Go compiler developers. It compares the compiler at different git commits. It can compare compilation time and memory usage, the sizes of the generated binaries, the sizes of the generated object files, and the generated code.
 
-Two important caveats:
+Important caveats:
+
 * compilecmp measures the toolchain (GOROOT) it was compiled with
 * compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
+* it is not safe to run multiple compilecmps concurrently
 
 # Specifying commits
 
