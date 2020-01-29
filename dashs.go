@@ -31,21 +31,47 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 	go scanDashS(a, []byte(aHash), aChan)
 	bChan := make(chan *pkgScanner)
 	go scanDashS(b, []byte(bHash), bChan)
+	aPkgs := make(map[string]*pkgScanner)
+	bPkgs := make(map[string]*pkgScanner)
 	for {
-		aPkg := <-aChan
-		bPkg := <-bChan
-		if aPkg == nil && bPkg == nil {
-			// all done
+		if aChan == nil && bChan == nil {
+			// all done!
 			break
 		}
-		switch {
-		case aPkg == nil:
-			log.Fatalf("-fn does not yet handle added/deleted packages, but found an added package %s", bPkg.Name)
-		case bPkg == nil:
-			log.Fatalf("-fn does not yet handle added/deleted packages, but found a deleted package %s", aPkg.Name)
-		case aPkg.Name != bPkg.Name:
-			log.Fatalf("-fn does not yet handle added/deleted packages, got %s != %s", aPkg.Name, bPkg.Name)
+		var aPkg, bPkg *pkgScanner
+		select {
+		case aPkg = <-aChan:
+			if aPkg == nil {
+				// aChan is done, disable it
+				aChan = nil
+				continue
+			}
+			var ok bool
+			bPkg, ok = bPkgs[aPkg.Name]
+			if !ok {
+				// we don't have the bPkg for this one, store and wait for later
+				aPkgs[aPkg.Name] = aPkg
+				continue
+			}
+			// we're going to process this entry, so delete it
+			delete(bPkgs, aPkg.Name)
+		case bPkg = <-bChan:
+			if bPkg == nil {
+				// bChan is done, disable it
+				bChan = nil
+				continue
+			}
+			var ok bool
+			aPkg, ok = aPkgs[bPkg.Name]
+			if !ok {
+				// we don't have the aPkg for this one, store and wait for later
+				bPkgs[bPkg.Name] = bPkg
+				continue
+			}
+			// we're going to process this entry, so delete it
+			delete(aPkgs, bPkg.Name)
 		}
+
 		pkg := aPkg.Name
 
 		needsHeader := true
@@ -128,6 +154,12 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 	sizes.flush("text size")
 	fmt.Println()
 	io.Copy(os.Stdout, sizesBuf)
+	for pkg := range aPkgs {
+		log.Printf("package %s was deleted", pkg)
+	}
+	for pkg := range bPkgs {
+		log.Printf("package %s was added", pkg)
+	}
 }
 
 func scanDashS(r io.Reader, sha []byte, c chan<- *pkgScanner) {
@@ -218,7 +250,7 @@ func extractNameAndSize(stext string) (string, int) {
 
 func streamDashS(platform string, c commit) (wait func(), r io.Reader) {
 	cmdgo := filepath.Join(c.dir, "bin", "go")
-	cmd := exec.Command(cmdgo, "build", "-p=1", "-gcflags=all=-S -dwarf=false", "std", "cmd")
+	cmd := exec.Command(cmdgo, "build", "-gcflags=all=-S -dwarf=false", "std", "cmd")
 	goos, goarch := parsePlatform(platform)
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch)
 	pipe, err := cmd.StderrPipe()
