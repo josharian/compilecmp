@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 )
@@ -44,6 +45,8 @@ func main() {
 	// todo: limit to n old compilecmp directories, maybe sort by atime? mtime?
 	flag.Parse()
 	log.SetFlags(0)
+
+	cleanCache()
 
 	var err error
 	cwd, err = os.Getwd()
@@ -546,4 +549,48 @@ func clHeadAndParent(cl int) (string, string, error) {
 		return "", "", err
 	}
 	return parse.CurrentRevision, parent, nil
+}
+
+func cleanCache() {
+	u, err := user.Current()
+	check(err)
+	root := filepath.Join(u.HomeDir, ".compilecmp")
+	f, err := os.Open(root)
+	check(err)
+	defer f.Close()
+	fis, err := f.Readdir(-1)
+	check(err)
+
+	// Look through ~/.compilecmp for any shas
+	// that are no longer contained in any branch, and delete them.
+	// This is the most common way to end up accumulating
+	// lots of junk in .compilecmp.
+	var wg sync.WaitGroup
+	for _, fi := range fis {
+		if !fi.IsDir() {
+			continue
+		}
+		wg.Add(1)
+		go func(sha string) {
+			defer wg.Done()
+			wt := filepath.Join(root, sha)
+			cmd := exec.Command("git", "branch", "--contains", sha)
+			cmd.Dir = wt
+			out, err := cmd.CombinedOutput()
+			check(err)
+			s := strings.TrimSpace(string(out))
+			lines := strings.Split(s, "\n")
+			if len(lines) == 0 ||
+				(len(lines) == 1 && lines[0] == "* (no branch)") {
+				// OK to delete
+				err := os.RemoveAll(wt)
+				if err != nil {
+					log.Printf("failed to remove unreachable worktree %s: %v", wt, err)
+				}
+			}
+		}(fi.Name())
+	}
+	wg.Wait()
+
+	// TODO: also look for very old versions?
 }

@@ -5,6 +5,8 @@ Important caveats:
 * compilecmp measures the toolchain (GOROOT) it was compiled with
 * compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
 * it is not safe to run multiple compilecmps concurrently
+* on startup, compilecmp deletes git-unreachable entries from its cache, which can be slow, because GOROOTs are large
+
 
 # Specifying commits
 
