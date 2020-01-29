@@ -90,7 +90,7 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 			if !ok {
 				if *flagFn != "stats" {
 					printHeader()
-					fmt.Println("DELETED", name)
+					fmt.Println("deleted", strings.TrimPrefix(name, `"".`))
 				}
 				continue
 			}
@@ -134,7 +134,7 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 		for name, bsf := range bPkg.Funcs {
 			if *flagFn != "stats" {
 				printHeader()
-				fmt.Println("INSERTED", name)
+				fmt.Println("inserted", strings.TrimPrefix(name, `"".`))
 			}
 			bTot += bsf.textsize
 		}
