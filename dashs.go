@@ -112,7 +112,7 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 			}
 			bTot += bsf.textsize
 		}
-		sizes.add(string(pkg)[len("# "):]+".s", int64(aTot), int64(bTot))
+		sizes.add(pkg+".s", int64(aTot), int64(bTot))
 		// TODO: option to print these
 		// printHeader()
 		// if aTot == bTot {
