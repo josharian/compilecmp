@@ -47,10 +47,19 @@ func main() {
 
 	cleanCache()
 
-	var err error
+	// Make a temp dir to use for the GOCACHE.
+	// See golang.org/issue/29561.
+	dir, err := ioutil.TempDir("", "compilecmp-gocache-")
+	check(err)
+	if debug {
+		fmt.Printf("GOCACHE=%s\n", dir)
+	}
+	defer os.RemoveAll(dir)
+	os.Setenv("GOCACHE", dir)
+
 	cwd, err = os.Getwd()
 	if err != nil {
-		log.Fatalf("could not working dir: %v", err)
+		log.Fatalf("could not get current working dir: %v", err)
 	}
 	beforeRef := "master"
 	afterRef := "HEAD"
@@ -243,6 +252,9 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 		fmt.Println()
 	}
 	// todo: notification?
+
+	// Clean the go cache; see golang.org/issue/29561.
+	after.cmdgo("", "clean", "-cache")
 }
 
 const (
