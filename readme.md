@@ -74,6 +74,17 @@ compilecmp can also compare the generated code, function by function. (This part
 * `-fn=bigger`: print all functions whose text size has gotten bigger
 * `-fn=stats`: print only the summary (per package total function text size)
 
+# Dumping SSA
+
+If you've identified a function of interest, you might want to compare
+the ssa.html output:
+
+```
+$ compilecmp -dumpssa "(*decoder).processDHT"
+```
+
+This will print the path to before and after SSA html files.
+
 # Platform
 
 compilecmp compiles for the host platform by default. To compile for other platforms, use `-platforms`.

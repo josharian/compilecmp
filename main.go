@@ -23,15 +23,16 @@ import (
 const debug = false // print commands as they are run
 
 var (
-	flagRun   = flag.String("run", "", "run benchmarks matching regex")
-	flagAll   = flag.Bool("all", false, "run all benchmarks, not just short ones")
-	flagCPU   = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
-	flagObj   = flag.Bool("obj", false, "report object file sizes")
-	flagPkg   = flag.String("pkg", "", "benchmark compilation of `pkg`")
-	flagCount = flag.Int("n", 0, "iterations")
-	flagEach  = flag.Bool("each", false, "run for every commit between before and after")
-	flagCL    = flag.Int("cl", 0, "run benchmark on CL number")
-	flagFn    = flag.String("fn", "", "find changed functions: all, changed, smaller, bigger, stats, or help")
+	flagRun     = flag.String("run", "", "run benchmarks matching regex")
+	flagAll     = flag.Bool("all", false, "run all benchmarks, not just short ones")
+	flagCPU     = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
+	flagObj     = flag.Bool("obj", false, "report object file sizes")
+	flagPkg     = flag.String("pkg", "", "benchmark compilation of `pkg`")
+	flagCount   = flag.Int("n", 0, "iterations")
+	flagEach    = flag.Bool("each", false, "run for every commit between before and after")
+	flagCL      = flag.Int("cl", 0, "run benchmark on CL number")
+	flagFn      = flag.String("fn", "", "find changed functions: all, changed, smaller, bigger, stats, or help")
+	flagDumpSSA = flag.String("dumpssa", "", "dump SSA html for named functions (use like GOSSAFUNC)")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
@@ -250,6 +251,9 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 	if *flagFn != "" {
 		compareFunctions(platform, before, after)
 		fmt.Println()
+	}
+	if *flagDumpSSA != "" {
+		dumpSSA(platform, before, after, *flagDumpSSA)
 	}
 	// todo: notification?
 
