@@ -440,12 +440,11 @@ func (c *commit) bench(platform, compilerflags string, record bool, goroot strin
 	goos, goarch := parsePlatform(platform)
 	cmd.Env = append(os.Environ(), path, "GOOS="+goos, "GOARCH="+goarch)
 	cmd.Dir = c.dir
-	out, err := cmd.CombinedOutput()
-	check(err)
 	if record {
-		_, err := c.tmp.Write(out)
-		check(err)
+		cmd.Stdout = c.tmp
 	}
+	err := cmd.Run()
+	check(err)
 }
 
 func git(args ...string) ([]byte, error) {
