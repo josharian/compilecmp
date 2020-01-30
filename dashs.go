@@ -114,12 +114,12 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 			color := ""
 			show := true
 			if asf.textsize < bsf.textsize {
-				if *flagFn == "better" || *flagFn == "stats" {
+				if *flagFn == "smaller" || *flagFn == "stats" {
 					show = false
 				}
 				color = ansiFgRed
 			} else {
-				if *flagFn == "worse" || *flagFn == "stats" {
+				if *flagFn == "bigger" || *flagFn == "stats" {
 					show = false
 				}
 				color = ansiFgGreen
