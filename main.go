@@ -164,7 +164,11 @@ func printcommit(ref string) {
 func allPlatforms() []string {
 	cmd := exec.Command("go", "tool", "dist", "list")
 	out, err := cmd.CombinedOutput()
-	check(err)
+	// TODO: maybe I should run this in the before/after
+	// repos, since I know they should have functional tools...
+	if err != nil {
+		log.Fatal("failed to run 'go tool dist list': %v", err)
+	}
 	out = bytes.TrimSpace(out)
 	return strings.Split(string(out), "\n")
 }
