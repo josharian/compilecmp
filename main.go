@@ -511,7 +511,7 @@ func worktree(ref string) commit {
 		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Fatalf("%v\n%v", out, err)
+			log.Fatalf("%s\n%v", out, err)
 		}
 	}
 	// These deletions are best effort.
