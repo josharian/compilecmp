@@ -388,7 +388,7 @@ func filesize(path string) int64 {
 
 func check(err error) {
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 }
 
