@@ -11,15 +11,34 @@ import (
 
 func dumpSSA(platform string, before, after commit, fnname string) {
 	fmt.Printf("dumping SSA for %v:\n", fnname)
+	// split fnname into pkg+fnname, if necessary
+	op := strings.Index(fnname, "(")
+	prefix := fnname
+	if op >= 0 {
+		prefix = fnname[:op]
+	}
+	dot := strings.LastIndex(prefix, ".")
+	var pkg string
+	if dot >= 0 && (op < 0 || dot < op) {
+		pkg = fnname[:dot]
+		fnname = fnname[dot+1:]
+	}
 
 	// make fnname into an easier to deal with filename
 	filename := strings.ReplaceAll(fnname, "(", "_")
 	filename = strings.ReplaceAll(filename, ")", "_")
+	filename = strings.ReplaceAll(filename, ":", "_")
 	filename = strings.ReplaceAll(filename, "*", ".")
 
 	for _, c := range []commit{before, after} {
 		cmdgo := filepath.Join(c.dir, "bin", "go")
-		cmd := exec.Command(cmdgo, "build", "std", "cmd")
+		args := []string{"build"}
+		if pkg != "" {
+			args = append(args, pkg)
+		} else {
+			args = append(args, "std", "cmd")
+		}
+		cmd := exec.Command(cmdgo, args...)
 		goos, goarch := parsePlatform(platform)
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "GOSSAFUNC="+fnname)
 		cmd.Dir = filepath.Join(c.dir, "src")
