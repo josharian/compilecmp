@@ -614,10 +614,18 @@ func cleanCache() {
 			cmd := exec.Command("git", "branch", "--contains", sha)
 			cmd.Dir = wt
 			out, err := cmd.CombinedOutput()
-			check(err)
+			okToDelete := false
+			if err != nil {
+				if strings.Contains(string(out), "not a git repository") {
+					// partially initialized repo; nuke it
+					okToDelete = true
+				} else {
+					log.Fatalf("%s\n%s$ %s: %v", out, wt, cmd, err)
+				}
+			}
 			s := strings.TrimSpace(string(out))
 			lines := strings.Split(s, "\n")
-			if len(lines) == 0 ||
+			if okToDelete || len(lines) == 0 ||
 				(len(lines) == 1 && lines[0] == "* (no branch)") {
 				// OK to delete
 				err := os.RemoveAll(wt)
