@@ -591,6 +591,8 @@ func cleanCache() {
 	u, err := user.Current()
 	check(err)
 	root := filepath.Join(u.HomeDir, ".compilecmp")
+	err = os.MkdirAll(root, 0755)
+	check(err)
 	f, err := os.Open(root)
 	check(err)
 	defer f.Close()
