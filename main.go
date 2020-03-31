@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -224,17 +225,18 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 	if *flagCount > 0 {
 		fmt.Println()
 		fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
-		start := time.Now()
+		e := ETA{start: time.Now(), n: *flagCount}
+		e.update(0)
 		for i := 0; i < *flagCount+1; i++ {
 			record := i != 0 // don't record the first run
+			if record {
+				e.update(i - 1)
+			}
 			before.bench(platform, beforeFlags, record, after.dir)
 			after.bench(platform, afterFlags, record, after.dir)
-			elapsed := time.Since(start)
-			avg := elapsed / time.Duration(i+1)
-			remain := (time.Duration(*flagCount - i)) * avg
-			remain /= time.Second
-			remain *= time.Second
-			fmt.Printf("\rcompleted % 4d of % 4d, estimated time remaining %v (eta %v)      ", i, *flagCount, remain, time.Now().Add(remain).Round(time.Second).Format(time.Kitchen))
+			if record {
+				e.update(i)
+			}
 		}
 		fmt.Println()
 	}
@@ -642,4 +644,25 @@ func cleanCache() {
 	// TODO: also look for very old versions?
 	// We could do this by always touching (say) GOROOT/VERSION
 	// every time we use a worktree, and then looking at last mtime.
+}
+
+type ETA struct {
+	start time.Time
+	n     int
+}
+
+func (e *ETA) update(i int) {
+	elapsed := time.Since(e.start)
+	eta := "??"
+	remain := "??"
+	if i > 0 {
+		avg := elapsed / time.Duration(i)
+		r := (time.Duration(e.n - i)) * avg
+		r /= time.Second
+		r *= time.Second
+		remain = fmt.Sprint(r)
+		eta = time.Now().Add(r).Round(time.Second).Format(time.Kitchen)
+	}
+	digits := int(math.Ceil(math.Log10(float64(e.n + 1))))
+	fmt.Printf("\rcompleted %[1]*d of %d, estimated time remaining %v (ETA %v)      ", digits, i, e.n, remain, eta)
 }
