@@ -605,8 +605,8 @@ func cleanCache() {
 	// that are no longer contained in any branch, and delete them.
 	// This is the most common way to end up accumulating
 	// lots of junk in .compilecmp.
-	// TODO: gate concurrently filesystem access here?
 	var wg sync.WaitGroup
+	gate := make(chan bool, 10) // gate concurrent calls
 	for _, fi := range fis {
 		if !fi.IsDir() {
 			continue
@@ -614,6 +614,8 @@ func cleanCache() {
 		wg.Add(1)
 		go func(sha string) {
 			defer wg.Done()
+			gate <- true
+			defer func() { <-gate }()
 			wt := filepath.Join(root, sha)
 			cmd := exec.Command("git", "branch", "--contains", sha)
 			cmd.Dir = wt
