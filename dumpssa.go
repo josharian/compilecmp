@@ -27,6 +27,9 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 	filename = strings.ReplaceAll(filename, ")", "_")
 	filename = strings.ReplaceAll(filename, ":", "_")
 	filename = strings.ReplaceAll(filename, "*", ".")
+	filename = strings.ReplaceAll(filename, "\"", "_")
+	filename = strings.ReplaceAll(filename, "[", "_")
+	filename = strings.ReplaceAll(filename, "]", "_")
 
 	for _, c := range []commit{before, after} {
 		cmdgo := filepath.Join(c.dir, "bin", "go")
