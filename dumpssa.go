@@ -12,15 +12,13 @@ import (
 func dumpSSA(platform string, before, after commit, fnname string) {
 	fmt.Printf("dumping SSA for %v:\n", fnname)
 	// split fnname into pkg+fnname, if necessary
-	op := strings.Index(fnname, "(")
-	prefix := fnname
-	if op >= 0 {
-		prefix = fnname[:op]
-	}
-	dot := strings.LastIndex(prefix, ".")
 	var pkg string
-	if dot >= 0 && (op < 0 || dot < op) {
-		pkg = fnname[:dot]
+	if slash := strings.LastIndex(fnname, "/"); slash >= 0 {
+		pkg = fnname[:slash]
+		fnname = fnname[slash:]
+	}
+	if dot := strings.Index(fnname, "."); dot >= 0 {
+		pkg += fnname[:dot]
 		fnname = fnname[dot+1:]
 	}
 
