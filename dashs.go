@@ -90,7 +90,7 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 			if !ok {
 				if *flagFn != "stats" {
 					printHeader()
-					fmt.Println("deleted", strings.TrimPrefix(name, `"".`))
+					fmt.Println("deleted", cleanFuncName(name))
 				}
 				continue
 			}
@@ -127,14 +127,15 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 			if show {
 				printHeader()
 				fmt.Print(color)
-				fmt.Println(strings.TrimPrefix(name, `"".`), asf.textsize, "->", bsf.textsize)
+				pct := 100 * (float64(bsf.textsize)/float64(asf.textsize) - 1)
+				fmt.Printf("%s %d -> %d  (%+0.2f%%)\n", cleanFuncName(name), asf.textsize, bsf.textsize, pct)
 				fmt.Print(ansiReset)
 			}
 		}
 		for name, bsf := range bPkg.Funcs {
 			if *flagFn != "stats" {
 				printHeader()
-				fmt.Println("inserted", strings.TrimPrefix(name, `"".`))
+				fmt.Println("inserted", cleanFuncName(name))
 			}
 			bTot += bsf.textsize
 		}
@@ -160,6 +161,12 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 	for pkg := range bPkgs {
 		log.Printf("package %s was added", pkg)
 	}
+}
+
+func cleanFuncName(name string) string {
+	name = strings.TrimPrefix(name, `"".`)
+	name = strings.TrimPrefix(name, `type.`)
+	return name
 }
 
 func scanDashS(r io.Reader, sha []byte, c chan<- *pkgScanner) {
