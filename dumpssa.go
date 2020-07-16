@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,10 +48,13 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		cmd.Dir = filepath.Join(c.dir, "src")
 		pipe, err := cmd.StderrPipe()
 		check(err)
+		// Duplicate output to a buffer, in case there is an error.
+		buf := new(bytes.Buffer)
+		tee := io.TeeReader(pipe, buf)
 		err = cmd.Start()
 		check(err)
 
-		scan := bufio.NewScanner(pipe)
+		scan := bufio.NewScanner(tee)
 		for scan.Scan() {
 			s := scan.Text()
 			if len(s) == 0 {
@@ -73,8 +79,10 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		}
 		check(scan.Err())
 
-		err = cmd.Wait()
-		check(err)
+		if err := cmd.Wait(); err != nil {
+			fmt.Println(buf.String())
+			log.Fatal(err)
+		}
 	}
 	fmt.Println()
 }
