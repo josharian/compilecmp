@@ -15,17 +15,7 @@ import (
 func dumpSSA(platform string, before, after commit, fnname string) {
 	fmt.Printf("dumping SSA for %v:\n", fnname)
 	// split fnname into pkg+fnname, if necessary
-	var pkg string
-	if slash := strings.LastIndex(fnname, "/"); slash >= 0 {
-		pkg = fnname[:slash]
-		fnname = fnname[slash:]
-	}
-	if !strings.ContainsAny(fnname, "()*") {
-		if dot := strings.Index(fnname, "."); dot >= 0 {
-			pkg += fnname[:dot]
-			fnname = fnname[dot+1:]
-		}
-	}
+	pkg, fnname := splitPkgFnname(fnname)
 
 	// make fnname into an easier to deal with filename
 	filename := strings.ReplaceAll(fnname, "(", "_")
@@ -87,4 +77,19 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		}
 	}
 	fmt.Println()
+}
+
+func splitPkgFnname(in string) (pkg, fnname string) {
+	fnname = in
+	if slash := strings.LastIndex(fnname, "/"); slash >= 0 {
+		pkg = fnname[:slash]
+		fnname = fnname[slash:]
+	}
+	if !strings.ContainsAny(fnname, "()*") {
+		if dot := strings.Index(fnname, "."); dot >= 0 {
+			pkg += fnname[:dot]
+			fnname = fnname[dot+1:]
+		}
+	}
+	return pkg, fnname
 }
