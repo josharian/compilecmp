@@ -2,29 +2,28 @@ compilecmp is a bit of a Swiss Army knife for Go compiler developers. It compare
 
 Important caveats:
 
-* compilecmp measures the toolchain (GOROOT) it was compiled with
-* compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
-* it is not safe to run multiple compilecmps concurrently
-* on startup, compilecmp deletes git-unreachable entries from its cache, which can be slow, because GOROOTs are large
-
+- compilecmp measures the toolchain (GOROOT) it was compiled with
+- compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
+- it is not safe to run multiple compilecmps concurrently
+- on startup, compilecmp deletes git-unreachable entries from its cache, which can be slow, because GOROOTs are large
 
 # Specifying commits
 
 compilecmp accepts up to two git refs as arguments.
 
-* If no refs are provided, it assumes you are measuring from master to HEAD.
+- If no refs are provided, it assumes you are measuring from master to HEAD.
 
 ```
 $ compilecmp  # compares master to head
 ```
 
-* If one ref is provided, compilecmp treats it as the before commit.
+- If one ref is provided, compilecmp treats it as the before commit.
 
 ```
 $ compilecmp head~1  # compares current commit to its parent
 ```
 
-* If two refs are provided, they are treated as the before and after commits.
+- If two refs are provided, they are treated as the before and after commits.
 
 ```
 $ compilecmp go1.13 speedy  # compares tagged go1.13 release to branch speedy
@@ -46,7 +45,7 @@ $ compilecmp -each master head  # compares master to head, and then every indivi
 
 Some compiler outputs are always the same, like the generated code, object files, and binaries.
 
-Others require multiple runs to measure accurately, such as allocations and CPU time. The `-n` flag lets you run multiple iterations.
+Others require multiple runs to measure accurately, such as allocations and CPU time. The `-n` flag lets you run multiple iterations. (Without `-n`, compilecmp does not report any data on allocations or CPU time.)
 
 ```
 $ compilecmp -n 5  # run five iterations
@@ -58,6 +57,8 @@ $ compilecmp -n 5  # run five iterations
 
 When `n > 0`, compilecmp also does a uncounted warmup run at the beginning.
 
+When you specify a number of runs, compilecmp defaults to running all benchmarks.
+
 # Compare files sizes
 
 By default, compilecmp prints the sizes of executables such as cmd/addr2line.
@@ -68,11 +69,11 @@ By default, compilecmp prints the sizes of executables such as cmd/addr2line.
 
 compilecmp can also compare the generated code, function by function. (This part is still in flux a bit.)
 
-* `-fn=all`: print all functions whose contents have changed
-* `-fn=changed`: print all functions whose text size has changed
-* `-fn=smaller`: print all functions whose text size has gotten smaller
-* `-fn=bigger`: print all functions whose text size has gotten bigger
-* `-fn=stats`: print only the summary (per package total function text size)
+- `-fn=all`: print all functions whose contents have changed
+- `-fn=changed`: print all functions whose text size has changed
+- `-fn=smaller`: print all functions whose text size has gotten smaller
+- `-fn=bigger`: print all functions whose text size has gotten bigger
+- `-fn=stats`: print only the summary (per package total function text size)
 
 # Dumping SSA
 
