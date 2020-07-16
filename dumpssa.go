@@ -20,9 +20,11 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		pkg = fnname[:slash]
 		fnname = fnname[slash:]
 	}
-	if dot := strings.Index(fnname, "."); dot >= 0 {
-		pkg += fnname[:dot]
-		fnname = fnname[dot+1:]
+	if !strings.ContainsAny(fnname, "()*") {
+		if dot := strings.Index(fnname, "."); dot >= 0 {
+			pkg += fnname[:dot]
+			fnname = fnname[dot+1:]
+		}
 	}
 
 	// make fnname into an easier to deal with filename
