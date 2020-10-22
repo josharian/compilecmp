@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -38,15 +37,13 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		goos, goarch := parsePlatform(platform)
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "GOSSAFUNC="+fnname)
 		cmd.Dir = filepath.Join(c.dir, "src")
-		pipe, err := cmd.StderrPipe()
-		check(err)
-		// Duplicate output to a buffer, in case there is an error.
-		buf := new(bytes.Buffer)
-		tee := io.TeeReader(pipe, buf)
-		err = cmd.Start()
-		check(err)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("%v:\n%s\n", cmd, out)
+			log.Fatal(err)
+		}
 
-		scan := bufio.NewScanner(tee)
+		scan := bufio.NewScanner(bytes.NewReader(out))
 		for scan.Scan() {
 			s := scan.Text()
 			if len(s) == 0 {
@@ -70,11 +67,6 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 			}
 		}
 		check(scan.Err())
-
-		if err := cmd.Wait(); err != nil {
-			fmt.Println(buf.String())
-			log.Fatal(err)
-		}
 	}
 	fmt.Println()
 }
