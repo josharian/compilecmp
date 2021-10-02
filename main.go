@@ -34,6 +34,7 @@ var (
 	flagCL      = flag.Int("cl", 0, "run benchmark on CL number")
 	flagFn      = flag.String("fn", "", "find changed functions: all, changed, smaller, bigger, stats, or help")
 	flagDumpSSA = flag.String("dumpssa", "", "dump SSA html for named functions (use like GOSSAFUNC)")
+	flagAllBash = flag.Bool("allbash", false, "run all.bash for each commit")
 
 	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
 	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
@@ -502,10 +503,16 @@ func worktree(ref string) commit {
 	}
 	var commands []string
 	cmdgo := filepath.Join(dest, "bin", "go")
-	if exists(cmdgo) {
+	switch {
+	case *flagAllBash:
+		// If requested, run all.bash.
+		commands = append(commands, filepath.Join(dest, "src", "all.bash"))
+	case exists(cmdgo):
+		// cmd/go exists, presumably from a previous run.
 		// Make sure everything is built, just in case a prior make.bash got interrupted.
 		commands = append(commands, cmdgo+" install std cmd")
-	} else {
+	default:
+		// No cmd/go. Probably a new installation. Run make.bash.
 		commands = append(commands, filepath.Join(dest, "src", "make.bash"))
 	}
 	for _, command := range commands {
