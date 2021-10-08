@@ -259,8 +259,7 @@ func streamDashS(platform string, c commit) (wait func(), r io.Reader) {
 	cmdgo := filepath.Join(c.dir, "bin", "go")
 	cmd := exec.Command(cmdgo, "build", "-gcflags=all=-S -dwarf=false", "std", "cmd")
 	goos, goarch := parsePlatform(platform)
-	// CL 219357 makes -S output hard to interpret without GOAMD64=normaljumps.
-	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "GOAMD64=normaljumps")
+	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch)
 	pipe, err := cmd.StderrPipe()
 	check(err)
 	err = cmd.Start()

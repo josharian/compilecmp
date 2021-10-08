@@ -15,6 +15,9 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 	fmt.Printf("dumping SSA for %v:\n", fnname)
 	// split fnname into pkg+fnname, if necessary
 	pkg, fnname := splitPkgFnname(fnname)
+	if pkg == "" {
+		log.Fatalf("must specify package for %v", fnname)
+	}
 
 	// make fnname into an easier to deal with filename
 	filename := strings.ReplaceAll(fnname, "(", "_")
@@ -51,16 +54,19 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 			}
 			const dumpedSSATo = "dumped SSA to "
 			if strings.HasPrefix(s, dumpedSSATo) {
-				relpath := s[len(dumpedSSATo):]
-				if !strings.HasSuffix(relpath, "ssa.html") {
+				path := s[len(dumpedSSATo):]
+				if !strings.HasSuffix(path, "ssa.html") {
 					panic("wrote ssa to non-ssa.html file")
 				}
-				src := filepath.Join(c.dir, "src", relpath)
+				if !filepath.IsAbs(path) {
+					path = filepath.Join(c.dir, "src", path)
+				}
+				src := path
 				prefix := ""
 				if platform != "" {
 					prefix = fmt.Sprintf("%s_%s_", goos, goarch)
 				}
-				dst := filepath.Join(c.dir, "src", strings.TrimSuffix(relpath, "ssa.html")+prefix+filename+".html")
+				dst := strings.TrimSuffix(path, "ssa.html") + prefix + filename + ".html"
 				err = os.Rename(src, dst)
 				check(err)
 				fmt.Println(dst)
