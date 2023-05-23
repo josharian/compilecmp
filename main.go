@@ -225,7 +225,7 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 
 	if *flagCount > 0 {
 		fmt.Println()
-		fmt.Println("benchstat -geomean ", before.tmp.Name(), after.tmp.Name())
+		fmt.Println("benchstat", before.tmp.Name(), after.tmp.Name())
 		e := ETA{start: time.Now(), n: *flagCount}
 		e.update(0)
 		for i := 0; i < *flagCount+1; i++ {
@@ -244,7 +244,7 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 	check(before.tmp.Close())
 	check(after.tmp.Close())
 	if *flagCount > 0 {
-		cmd := exec.Command("benchstat", "-geomean", before.tmp.Name(), after.tmp.Name())
+		cmd := exec.Command("benchstat", before.tmp.Name(), after.tmp.Name())
 		out, err := cmd.CombinedOutput()
 		check(err)
 		fmt.Println(string(out))
