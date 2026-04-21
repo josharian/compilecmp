@@ -48,6 +48,14 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 
+	// Fail fast if benchstat is missing; otherwise we'd run the full benchmark
+	// suite (potentially hours) and only discover the problem at the very end.
+	if *flagCount > 0 {
+		if _, err := exec.LookPath("benchstat"); err != nil {
+			log.Fatalf("benchstat not found in PATH; install with 'go install golang.org/x/perf/cmd/benchstat@latest'")
+		}
+	}
+
 	cleanCache()
 
 	// Make a temp dir to use for the GOCACHE.
@@ -233,8 +241,8 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 			if record {
 				e.update(i - 1)
 			}
-			before.bench(platform, beforeFlags, record, after.dir)
-			after.bench(platform, afterFlags, record, after.dir)
+			before.bench(platform, beforeFlags, record)
+			after.bench(platform, afterFlags, record)
 			if record {
 				e.update(i)
 			}
@@ -424,7 +432,7 @@ func (c *commit) cmdgo(platform string, args ...string) []byte {
 	return out
 }
 
-func (c *commit) bench(platform, compilerflags string, record bool, goroot string) {
+func (c *commit) bench(platform, compilerflags string, record bool) {
 	var args []string
 	if !*flagAll {
 		args = append(args, "-short")
@@ -551,10 +559,12 @@ func commitmessage(ref string) []byte {
 // clHeadAndParent fetches the given CL to local, returns the CL HEAD and its parents commits.
 func clHeadAndParent(cl int) (string, string, error) {
 	clUrlFormat := "https://go-review.googlesource.com/changes/%d/?o=CURRENT_REVISION&o=ALL_COMMITS"
-	resp, err := http.Get(fmt.Sprintf(clUrlFormat, cl))
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(fmt.Sprintf(clUrlFormat, cl))
 	if err != nil {
 		return "", "", err
 	}
+	defer resp.Body.Close()
 
 	// Work around https://code.google.com/p/gerrit/issues/detail?id=3540
 	body, err := ioutil.ReadAll(resp.Body)
@@ -638,8 +648,24 @@ func cleanCache() {
 			}
 			s := strings.TrimSpace(string(out))
 			lines := strings.Split(s, "\n")
-			if okToDelete || len(lines) == 0 ||
-				(len(lines) == 1 && lines[0] == "* (no branch)") {
+			// Decide whether any real branch contains this sha.
+			// `git branch --contains` in a detached worktree always prints a
+			// "* (HEAD detached at X)" or "* (no branch)" marker line for the
+			// worktree itself; that is not a real branch. Real branches appear
+			// as "  name" or "* name" (no parens).
+			hasBranch := false
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				if strings.HasPrefix(line, "* (") {
+					continue
+				}
+				hasBranch = true
+				break
+			}
+			if okToDelete || !hasBranch {
 				// OK to delete
 				err := os.RemoveAll(wt)
 				if err != nil {

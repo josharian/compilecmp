@@ -239,7 +239,6 @@ func (s *pkgScanner) flush() {
 type stextFunc struct {
 	textsize int    // length in instructions of the function
 	bodyhash []byte // hash of -S output for the function
-	body     string
 }
 
 func extractNameAndSize(stext string) (string, int) {
