@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
@@ -60,7 +59,7 @@ func main() {
 
 	// Make a temp dir to use for the GOCACHE.
 	// See golang.org/issue/29561.
-	dir, err := ioutil.TempDir("", "compilecmp-gocache-")
+	dir, err := os.MkdirTemp("", "compilecmp-gocache-")
 	check(err)
 	if debug {
 		fmt.Printf("GOCACHE=%s\n", dir)
@@ -77,6 +76,9 @@ func main() {
 	if *flagCL != 0 {
 		if flag.NArg() > 0 {
 			log.Fatal("-cl NNN is incompatible with ref arguments")
+		}
+		if *flagEach {
+			log.Fatal("-cl NNN is incompatible with -each (a CL is a single commit)")
 		}
 		clHead, parent, err := clHeadAndParent(*flagCL)
 		if err != nil {
@@ -163,11 +165,13 @@ func combineFlags(x, y string) string {
 
 func printcommit(ref string) {
 	sha := resolve(ref)
-	if !strings.HasPrefix(ref, sha) {
-		fmt.Printf("%s (%s): %s\n", ref, sha, commitmessage(sha))
+	short := shortsha(sha)
+	// If the user's ref is a prefix of the sha (e.g. they passed a sha),
+	// just show the sha once.
+	if strings.HasPrefix(sha, ref) {
+		fmt.Printf("%s: %s\n", short, commitmessage(sha))
 	} else {
-		// TODO: try rev-parse to get a "pretty" name for this ref.
-		fmt.Printf("%s: %s\n", sha, commitmessage(sha))
+		fmt.Printf("%s (%s): %s\n", ref, short, commitmessage(sha))
 	}
 }
 
@@ -284,12 +288,10 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 
 const (
 	ansiBold     = "\u001b[1m"
-	ansiDim      = "\u001b[2m"
 	ansiFgRed    = "\u001b[31m"
 	ansiFgGreen  = "\u001b[32m"
 	ansiFgYellow = "\u001b[33m"
 	ansiFgBlue   = "\u001b[36m"
-	ansiFgWhite  = "\u001b[37m"
 	ansiReset    = "\u001b[0m"
 )
 
@@ -486,13 +488,23 @@ func resolve(ref string) string {
 	if sha, ok := resolved[ref]; ok {
 		return sha
 	}
-	// Resolve ref to a sha1.
-	out, err := git("rev-parse", "--short", ref)
+	// Resolve ref to a full sha1. Full SHAs are used as cache directory names
+	// so that cache keys are stable across runs (git's short-sha length grows
+	// with repo size over time, which would otherwise orphan cache dirs).
+	out, err := git("rev-parse", ref)
 	if err != nil {
 		log.Fatalf("could not resolve ref %q: %v", ref, err)
 	}
 	sha := string(out)
 	resolved[ref] = sha
+	return sha
+}
+
+// shortsha returns a short, human-readable prefix of a full sha for display.
+func shortsha(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
 	return sha
 }
 
@@ -539,7 +551,7 @@ func worktree(ref string) commit {
 	// See https://github.com/golang/go/issues/31851 for context.
 	os.RemoveAll(filepath.Join(dest, "pkg", "obj"))
 	os.RemoveAll(filepath.Join(dest, "pkg", "bootstrap"))
-	tmp, err := ioutil.TempFile("", "")
+	tmp, err := os.CreateTemp("", "")
 	check(err)
 	return commit{ref: ref, sha: sha, dir: dest, tmp: tmp}
 }
@@ -567,7 +579,7 @@ func clHeadAndParent(cl int) (string, string, error) {
 	defer resp.Body.Close()
 
 	// Work around https://code.google.com/p/gerrit/issues/detail?id=3540
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", err
 	}

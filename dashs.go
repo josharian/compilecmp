@@ -242,15 +242,31 @@ type stextFunc struct {
 }
 
 func extractNameAndSize(stext string) (string, int) {
+	orig := stext
+	bail := func(msg string) (string, int) {
+		log.Fatalf("malformed STEXT line: %s: %q", msg, orig)
+		return "", 0
+	}
 	i := strings.IndexByte(stext, ' ')
+	if i < 0 {
+		return bail("no space after name")
+	}
 	name := stext[:i]
 	stext = stext[i:]
 	i = strings.Index(stext, " size=")
+	if i < 0 {
+		return bail("no size= field")
+	}
 	stext = stext[i+len(" size="):]
 	i = strings.Index(stext, " ")
+	if i < 0 {
+		return bail("no space after size=")
+	}
 	stext = stext[:i]
 	n, err := strconv.Atoi(stext)
-	check(err)
+	if err != nil {
+		return bail("size= not an integer")
+	}
 	return name, n
 }
 
