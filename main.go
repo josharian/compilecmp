@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -313,16 +314,26 @@ func newFilesizes(out io.Writer) *filesizes {
 }
 
 func (s *filesizes) add(name string, beforeSize, afterSize int64) {
-	if beforeSize == 0 || afterSize == 0 {
+	switch {
+	case beforeSize == 0 && afterSize == 0:
 		return
+	case beforeSize == 0:
+		s.totafter += afterSize
+		s.haschange = true
+		fmt.Fprintf(s.w, "%s\t-\t%d\t%+d\t(added)\t\n", name, afterSize, afterSize)
+	case afterSize == 0:
+		s.totbefore += beforeSize
+		s.haschange = true
+		fmt.Fprintf(s.w, "%s\t%d\t-\t%+d\t(removed)\t\n", name, beforeSize, -beforeSize)
+	default:
+		s.totbefore += beforeSize
+		s.totafter += afterSize
+		if beforeSize == afterSize {
+			return
+		}
+		s.haschange = true
+		fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", name, beforeSize, afterSize, afterSize-beforeSize, 100*float64(afterSize)/float64(beforeSize)-100)
 	}
-	s.totbefore += beforeSize
-	s.totafter += afterSize
-	if beforeSize == afterSize {
-		return
-	}
-	s.haschange = true
-	fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", name, beforeSize, afterSize, afterSize-beforeSize, 100*float64(afterSize)/float64(beforeSize)-100)
 }
 
 func (s *filesizes) flush(desc string) {
@@ -336,57 +347,112 @@ func (s *filesizes) flush(desc string) {
 
 func compareBinaries(platform string, before, after commit) {
 	sizes := newFilesizes(os.Stdout)
-	// TODO: use glob instead of hard-coding
 	goos, goarch := parsePlatform(platform)
 	dirs := []string{"pkg/tool/" + goos + "_" + goarch}
 	if platform != "" {
 		dirs = append(dirs, "bin")
 	}
 	for _, dir := range dirs {
-		for _, base := range []string{"go", "addr2line", "api", "asm", "buildid", "cgo", "compile", "cover", "dist", "doc", "fix", "link", "nm", "objdump", "pack", "pprof", "test2json", "trace", "vet"} {
-			path := filepath.FromSlash(dir + "/" + base)
-			beforeSize := filesize(filepath.Join(before.dir, path))
-			afterSize := filesize(filepath.Join(after.dir, filepath.FromSlash(path)))
-			name := filepath.Base(path)
-			sizes.add(name, beforeSize, afterSize)
+		beforeMap := readDirSizes(filepath.Join(before.dir, filepath.FromSlash(dir)))
+		afterMap := readDirSizes(filepath.Join(after.dir, filepath.FromSlash(dir)))
+		names := make(map[string]bool, len(beforeMap)+len(afterMap))
+		for n := range beforeMap {
+			names[n] = true
+		}
+		for n := range afterMap {
+			names[n] = true
+		}
+		sorted := make([]string, 0, len(names))
+		for n := range names {
+			sorted = append(sorted, n)
+		}
+		sort.Strings(sorted)
+		for _, name := range sorted {
+			sizes.add(name, beforeMap[name], afterMap[name])
 		}
 	}
 	sizes.flush("binary")
 }
 
+// readDirSizes returns a map from file basename to size for regular files
+// directly in dir. Missing dirs and non-regular entries are silently ignored.
+func readDirSizes(dir string) map[string]int64 {
+	result := map[string]int64{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		result[e.Name()] = info.Size()
+	}
+	return result
+}
+
 func compareObjectFiles(platform string, before, after commit) {
 	platformPath := strings.ReplaceAll(platform, "/", "_")
-	pkg := filepath.Join(before.dir, "pkg")
-	if platformPath != "" {
-		pkg = filepath.Join(pkg, platformPath)
-	}
-	var files []string
-	err := filepath.Walk(pkg, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || !strings.HasSuffix(path, ".a") || !strings.HasPrefix(path, pkg) {
-			return nil
-		}
-		files = append(files, path)
-		return nil
-	})
-	check(err)
-	sizes := newFilesizes(os.Stdout)
-	for _, beforePath := range files {
-		suff := beforePath[len(pkg):]
-		afterPath := filepath.Join(after.dir, "pkg")
+	rootFor := func(c commit) string {
+		p := filepath.Join(c.dir, "pkg")
 		if platformPath != "" {
-			afterPath = filepath.Join(afterPath, platformPath)
+			p = filepath.Join(p, platformPath)
 		}
-		afterPath = filepath.Join(afterPath, suff)
-		beforeSize := filesize(beforePath)
-		afterSize := filesize(afterPath)
-		// suff is of the form /arch/. Remove that.
-		suff = filepath.ToSlash(suff)
-		suff = suff[1:]                              // remove leading slash
-		suff = suff[strings.IndexByte(suff, '/')+1:] // remove next slash
-		sizes.add(suff, beforeSize, afterSize)
+		return p
+	}
+	// collect returns a map from path-relative-to-root to file size,
+	// for every ".a" file under root.
+	collect := func(root string) map[string]int64 {
+		result := map[string]int64{}
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".a") || !strings.HasPrefix(path, root) {
+				return nil
+			}
+			result[path[len(root):]] = info.Size()
+			return nil
+		})
+		if err != nil && !os.IsNotExist(err) {
+			check(err)
+		}
+		return result
+	}
+	beforeMap := collect(rootFor(before))
+	afterMap := collect(rootFor(after))
+	keys := make(map[string]bool, len(beforeMap)+len(afterMap))
+	for k := range beforeMap {
+		keys[k] = true
+	}
+	for k := range afterMap {
+		keys[k] = true
+	}
+	sorted := make([]string, 0, len(keys))
+	for k := range keys {
+		sorted = append(sorted, k)
+	}
+	sort.Strings(sorted)
+	sizes := newFilesizes(os.Stdout)
+	for _, suff := range sorted {
+		// suff is of the form /arch/pkg/file.a (when platformPath == "")
+		// or /pkg/file.a (when platformPath is set). Strip the leading slash,
+		// and strip the arch segment if we didn't already scope the walk to one.
+		name := filepath.ToSlash(suff)
+		name = strings.TrimPrefix(name, "/")
+		if platformPath == "" {
+			if i := strings.IndexByte(name, '/'); i >= 0 {
+				name = name[i+1:]
+			}
+		}
+		sizes.add(name, beforeMap[suff], afterMap[suff])
 	}
 	sizes.flush("object file")
 }
