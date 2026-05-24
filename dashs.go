@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -33,46 +34,53 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 	go scanDashS(b, []byte(bHash), bChan)
 	aPkgs := make(map[string]*pkgScanner)
 	bPkgs := make(map[string]*pkgScanner)
-	for {
-		if aChan == nil && bChan == nil {
-			// all done!
-			break
+	done := make(chan struct{}, 2)
+	go func() {
+		for p := range aChan {
+			aPkgs[p.Name] = p
 		}
-		var aPkg, bPkg *pkgScanner
-		select {
-		case aPkg = <-aChan:
-			if aPkg == nil {
-				// aChan is done, disable it
-				aChan = nil
-				continue
-			}
-			var ok bool
-			bPkg, ok = bPkgs[aPkg.Name]
-			if !ok {
-				// we don't have the bPkg for this one, store and wait for later
-				aPkgs[aPkg.Name] = aPkg
-				continue
-			}
-			// we're going to process this entry, so delete it
-			delete(bPkgs, aPkg.Name)
-		case bPkg = <-bChan:
-			if bPkg == nil {
-				// bChan is done, disable it
-				bChan = nil
-				continue
-			}
-			var ok bool
-			aPkg, ok = aPkgs[bPkg.Name]
-			if !ok {
-				// we don't have the aPkg for this one, store and wait for later
-				bPkgs[bPkg.Name] = bPkg
-				continue
-			}
-			// we're going to process this entry, so delete it
-			delete(aPkgs, bPkg.Name)
+		done <- struct{}{}
+	}()
+	go func() {
+		for p := range bChan {
+			bPkgs[p.Name] = p
 		}
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
 
-		pkg := aPkg.Name
+	// Process packages in deterministic (sorted) order so that output
+	// is stable across runs.
+	pkgNames := make([]string, 0, len(aPkgs)+len(bPkgs))
+	seen := make(map[string]bool, len(aPkgs)+len(bPkgs))
+	for name := range aPkgs {
+		if !seen[name] {
+			seen[name] = true
+			pkgNames = append(pkgNames, name)
+		}
+	}
+	for name := range bPkgs {
+		if !seen[name] {
+			seen[name] = true
+			pkgNames = append(pkgNames, name)
+		}
+	}
+	sort.Strings(pkgNames)
+
+	for _, pkg := range pkgNames {
+		aPkg, aOk := aPkgs[pkg]
+		bPkg, bOk := bPkgs[pkg]
+		if !aOk {
+			log.Printf("package %s was added", pkg)
+			continue
+		}
+		if !bOk {
+			log.Printf("package %s was deleted", pkg)
+			continue
+		}
+		delete(aPkgs, pkg)
+		delete(bPkgs, pkg)
 
 		needsHeader := true
 		printHeader := func() {
@@ -84,7 +92,9 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 		}
 
 		var aTot, bTot int
-		for name, asf := range aPkg.Funcs {
+		aNames := sortedKeys(aPkg.Funcs)
+		for _, name := range aNames {
+			asf := aPkg.Funcs[name]
 			aTot += asf.textsize
 			bsf, ok := bPkg.Funcs[name]
 			if !ok {
@@ -132,7 +142,9 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 				fmt.Print(ansiReset)
 			}
 		}
-		for name, bsf := range bPkg.Funcs {
+		bNames := sortedKeys(bPkg.Funcs)
+		for _, name := range bNames {
+			bsf := bPkg.Funcs[name]
 			if *flagFn != "stats" {
 				printHeader()
 				fmt.Println("inserted", cleanFuncName(name))
@@ -155,12 +167,15 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 	sizes.flush("text size")
 	fmt.Println()
 	io.Copy(os.Stdout, sizesBuf)
-	for pkg := range aPkgs {
-		log.Printf("package %s was deleted", pkg)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	for pkg := range bPkgs {
-		log.Printf("package %s was added", pkg)
-	}
+	sort.Strings(keys)
+	return keys
 }
 
 func cleanFuncName(name string) string {
