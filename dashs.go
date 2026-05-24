@@ -11,10 +11,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 )
+
+// closureHashRE matches the content-hash suffix the compiler appends to
+// closures inside generic functions, e.g. "func1#5tD4ql0F/hs=" or
+// "func1#5tD4ql0F/hs=#". The base64-ish hash plus optional padding and an
+// optional trailing '#' are stripped to allow matching closures across
+// builds whose body changed (different hash) but whose enclosing function
+// is unchanged.
+var closureHashRE = regexp.MustCompile(`#[A-Za-z0-9+/]+=*#?$`)
+
+func stripClosureHash(name string) string {
+	return closureHashRE.ReplaceAllString(name, "")
+}
 
 func compareFunctions(platform string, before, after commit) {
 	await, ascan := streamDashS(platform, before)
@@ -92,34 +105,21 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 		}
 
 		var aTot, bTot int
-		aNames := sortedKeys(aPkg.Funcs)
-		for _, name := range aNames {
-			asf := aPkg.Funcs[name]
-			aTot += asf.textsize
-			bsf, ok := bPkg.Funcs[name]
-			if !ok {
-				if *flagFn != "stats" {
-					printHeader()
-					fmt.Println("deleted", cleanFuncName(name))
-				}
-				continue
-			}
-			delete(bPkg.Funcs, name)
-			bTot += bsf.textsize
+		// Helper to compare a matched pair and produce the same output
+		// the original code did inside the exact-name loop.
+		compare := func(aName, bName string, asf, bsf stextFunc) {
 			if bytes.Equal(asf.bodyhash, bsf.bodyhash) {
-				continue
+				return
 			}
 			// TODO: option to show these
 			if asf.textsize == bsf.textsize {
 				if *flagFn == "all" {
 					printHeader()
 					fmt.Print(ansiFgBlue)
-					fmt.Println(name, "changed")
+					fmt.Println(aName, "changed")
 					fmt.Print(ansiReset)
 				}
-				// TODO: option for this?
-				// diff.Text("a", "b", asf.body, bsf.body, os.Stdout)
-				continue
+				return
 			}
 			color := ""
 			show := true
@@ -138,18 +138,116 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 				printHeader()
 				fmt.Print(color)
 				pct := 100 * (float64(bsf.textsize)/float64(asf.textsize) - 1)
-				fmt.Printf("%s %d -> %d  (%+0.2f%%)\n", cleanFuncName(name), asf.textsize, bsf.textsize, pct)
+				dispName := cleanFuncName(aName)
+				if aName != bName {
+					dispName = fmt.Sprintf("%s -> %s", cleanFuncName(aName), cleanFuncName(bName))
+				}
+				fmt.Printf("%s %d -> %d  (%+0.2f%%)\n", dispName, asf.textsize, bsf.textsize, pct)
 				fmt.Print(ansiReset)
 			}
 		}
-		bNames := sortedKeys(bPkg.Funcs)
-		for _, name := range bNames {
-			bsf := bPkg.Funcs[name]
-			if *flagFn != "stats" {
+
+		// Pass 1: exact-name match. Walk in sorted order for stable output.
+		aLeft := make(map[string]stextFunc, len(aPkg.Funcs))
+		for _, name := range sortedKeys(aPkg.Funcs) {
+			asf := aPkg.Funcs[name]
+			aTot += asf.textsize
+			bsf, ok := bPkg.Funcs[name]
+			if !ok {
+				aLeft[name] = asf
+				continue
+			}
+			delete(bPkg.Funcs, name)
+			bTot += bsf.textsize
+			compare(name, name, asf, bsf)
+		}
+		// bPkg.Funcs now holds the b-side leftovers.
+		bLeft := bPkg.Funcs
+
+		// Pass 2: match leftovers by stripped name (closure hash removed).
+		// Catches closures whose body changed but whose enclosing function
+		// did not. If multiple leftovers strip to the same key, pick the
+		// lexicographically first one to keep matching deterministic.
+		bByStripped := make(map[string][]string, len(bLeft))
+		for name := range bLeft {
+			s := stripClosureHash(name)
+			if s == name {
+				continue
+			}
+			bByStripped[s] = append(bByStripped[s], name)
+		}
+		for _, names := range bByStripped {
+			sort.Strings(names)
+		}
+		matched2 := make([]string, 0)
+		for _, aName := range sortedKeys(aLeft) {
+			aStripped := stripClosureHash(aName)
+			if aStripped == aName {
+				continue
+			}
+			cands := bByStripped[aStripped]
+			if len(cands) == 0 {
+				continue
+			}
+			bName := cands[0]
+			bByStripped[aStripped] = cands[1:]
+			asf := aLeft[aName]
+			bsf := bLeft[bName]
+			bTot += bsf.textsize
+			delete(bLeft, bName)
+			matched2 = append(matched2, aName)
+			compare(aName, bName, asf, bsf)
+		}
+		for _, n := range matched2 {
+			delete(aLeft, n)
+		}
+
+		// Pass 3: match leftovers by bodyhash. Catches closures whose body
+		// is unchanged but whose enclosing function was re-attributed by
+		// the linker's closure-dedup pass (different "winner" between
+		// builds). Bodyhash equality means the disassembly is identical,
+		// so attribution to each other is correct.
+		bByHash := make(map[string][]string, len(bLeft))
+		for name, sf := range bLeft {
+			bByHash[string(sf.bodyhash)] = append(bByHash[string(sf.bodyhash)], name)
+		}
+		for _, names := range bByHash {
+			sort.Strings(names)
+		}
+		matched3 := make([]string, 0)
+		for _, aName := range sortedKeys(aLeft) {
+			asf := aLeft[aName]
+			cands := bByHash[string(asf.bodyhash)]
+			if len(cands) == 0 {
+				continue
+			}
+			bName := cands[0]
+			bByHash[string(asf.bodyhash)] = cands[1:]
+			bsf := bLeft[bName]
+			bTot += bsf.textsize
+			delete(bLeft, bName)
+			matched3 = append(matched3, aName)
+			// Bodies are identical (same hash); compare is a no-op, but
+			// nothing to print regardless.
+			_ = bsf
+		}
+		for _, n := range matched3 {
+			delete(aLeft, n)
+		}
+
+		// Anything still in aLeft is genuinely deleted; bLeft, inserted.
+		if *flagFn != "stats" {
+			for _, name := range sortedKeys(aLeft) {
+				printHeader()
+				fmt.Println("deleted", cleanFuncName(name))
+			}
+			for _, name := range sortedKeys(bLeft) {
 				printHeader()
 				fmt.Println("inserted", cleanFuncName(name))
 			}
-			bTot += bsf.textsize
+		}
+		for _, name := range sortedKeys(bLeft) {
+			bTot += bLeft[name].textsize
 		}
 		sizes.add(pkg+".s", int64(aTot), int64(bTot))
 		// TODO: option to print these
