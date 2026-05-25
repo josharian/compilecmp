@@ -19,14 +19,13 @@ import (
 
 // closureHashRE matches the content-hash suffix the compiler appends to
 // closures inside generic functions, e.g. "func1#5tD4ql0F/hs=" or
-// "func1#5tD4ql0F/hs=#". The base64-ish hash plus optional padding and an
-// optional trailing '#' are stripped to allow matching closures across
-// builds whose body changed (different hash) but whose enclosing function
-// is unchanged.
-var closureHashRE = regexp.MustCompile(`#[A-Za-z0-9+/]+=*#?$`)
+// "func1#5tD4ql0F/hs=#". The hash can be followed by compiler-generated
+// wrapper suffixes like ".1" or ".deferwrap1", so don't require it to appear
+// at the end of the symbol.
+var closureHashRE = regexp.MustCompile(`#[A-Za-z0-9+/]{8,}=*#?(\.|$)`)
 
 func stripClosureHash(name string) string {
-	return closureHashRE.ReplaceAllString(name, "")
+	return closureHashRE.ReplaceAllString(name, "$1")
 }
 
 func compareFunctions(platform string, before, after commit) {
