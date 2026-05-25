@@ -287,14 +287,27 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 	after.cmdgo("", "clean", "-cache")
 }
 
-const (
-	ansiBold     = "\u001b[1m"
-	ansiFgRed    = "\u001b[31m"
-	ansiFgGreen  = "\u001b[32m"
-	ansiFgYellow = "\u001b[33m"
-	ansiFgBlue   = "\u001b[36m"
-	ansiReset    = "\u001b[0m"
+var (
+	ansiBold     string
+	ansiFgRed    string
+	ansiFgGreen  string
+	ansiFgYellow string
+	ansiFgBlue   string
+	ansiReset    string
 )
+
+func init() {
+	fi, err := os.Stdout.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return
+	}
+	ansiBold = "\u001b[1m"
+	ansiFgRed = "\u001b[31m"
+	ansiFgGreen = "\u001b[32m"
+	ansiFgYellow = "\u001b[33m"
+	ansiFgBlue = "\u001b[36m"
+	ansiReset = "\u001b[0m"
+}
 
 type filesizes struct {
 	totbefore int64
@@ -579,7 +592,19 @@ func worktree(ref string) commit {
 	check(err)
 	sha := resolve(ref)
 	dest := filepath.Join(u.HomeDir, ".compilecmp", sha)
-	if !exists(dest) {
+	if !validWorktree(dest, sha) {
+		if exists(dest) {
+			if debug {
+				fmt.Printf("rm -rf stale worktree cache %s\n", dest)
+			}
+			// The worktree directory can be left behind after "git worktree
+			// remove" because ignored build artifacts remain. Don't mistake
+			// such leftovers for a usable cached checkout.
+			git("worktree", "remove", "--force", dest)
+			if err := os.RemoveAll(dest); err != nil {
+				log.Fatalf("could not remove stale worktree cache %q: %v", dest, err)
+			}
+		}
 		if debug {
 			fmt.Printf("cp <%s> %s\n", ref, dest)
 		}
@@ -593,12 +618,13 @@ func worktree(ref string) commit {
 	case *flagAllBash:
 		// If requested, run all.bash.
 		commands = append(commands, filepath.Join(dest, "src", "all.bash"))
-	case exists(cmdgo):
+	case completeToolchain(dest):
 		// cmd/go exists, presumably from a previous run.
 		// Make sure everything is built, just in case a prior make.bash got interrupted.
 		commands = append(commands, cmdgo+" install std cmd")
 	default:
-		// No cmd/go. Probably a new installation. Run make.bash.
+		// No cmd/go, or an incomplete tool directory. Probably a new
+		// installation, or leftovers from an interrupted/old run. Run make.bash.
 		commands = append(commands, filepath.Join(dest, "src", "make.bash"))
 	}
 	for _, command := range commands {
@@ -620,6 +646,49 @@ func worktree(ref string) commit {
 	tmp, err := os.CreateTemp("", "")
 	check(err)
 	return commit{ref: ref, sha: sha, dir: dest, tmp: tmp}
+}
+
+func completeToolchain(dir string) bool {
+	if !exists(filepath.Join(dir, "bin", "go")) {
+		return false
+	}
+	toolDir := filepath.Join(dir, "pkg", "tool", runtime.GOOS+"_"+runtime.GOARCH)
+	required := [...]string{
+		"addr2line",
+		"asm",
+		"buildid",
+		"cgo",
+		"compile",
+		"covdata",
+		"cover",
+		"dist",
+		"distpack",
+		"fix",
+		"link",
+		"nm",
+		"objdump",
+		"pack",
+		"pprof",
+		"preprofile",
+		"test2json",
+		"trace",
+		"vet",
+	}
+	for _, name := range required {
+		if !exists(filepath.Join(toolDir, name)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validWorktree(dir, sha string) bool {
+	if !exists(filepath.Join(dir, ".git")) {
+		return false
+	}
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+	out, err := cmd.CombinedOutput()
+	return err == nil && string(bytes.TrimSpace(out)) == sha
 }
 
 func exists(path string) bool {
