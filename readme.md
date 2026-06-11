@@ -110,6 +110,14 @@ You can also run benchmarks for any package, not necessarily only those in `comp
 $ compilebench -pkg github.com/pkg/diff  # test speed/allocs when compiling this package
 ```
 
+`-pkg` also works with `-fn`, in which case the function-level diff is taken
+across the named package and its dependencies (instead of std + cmd). The
+package is given as a directory path inside a Go module:
+
+```
+$ compilecmp -fn=changed -pkg /path/to/repo/cmd/foo  # compare generated code for cmd/foo and its deps
+```
+
 # Extra compiler flags
 
 compilecmp can pass extra compiler flags. To see how much using `-race` slows down the compiler:

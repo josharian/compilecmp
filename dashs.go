@@ -382,9 +382,55 @@ func extractNameAndSize(stext string) (string, int) {
 	return name, n
 }
 
+// findModuleRoot walks up from dir until it finds a go.mod file. It returns
+// the module root and the package path relative to that root, or empty
+// strings if no module is found.
+func findModuleRoot(dir string) (root, rel string) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", ""
+	}
+	d := abs
+	for {
+		if _, err := os.Stat(filepath.Join(d, "go.mod")); err == nil {
+			r, err := filepath.Rel(d, abs)
+			if err != nil {
+				return "", ""
+			}
+			if r == "." {
+				return d, "."
+			}
+			return d, "./" + filepath.ToSlash(r)
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", ""
+		}
+		d = parent
+	}
+}
+
 func streamDashS(platform string, c commit) (wait func(), r io.Reader) {
 	cmdgo := filepath.Join(c.dir, "bin", "go")
-	cmd := exec.Command(cmdgo, "build", "-gcflags=all=-S -dwarf=false", "std", "cmd")
+	args := []string{"build", "-gcflags=all=-S -dwarf=false"}
+	var dir string
+	if *flagPkg != "" {
+		// Build a single package (and its dependencies) at the path given
+		// by -pkg. This lets -fn report function-level diffs for
+		// out-of-tree code, not just std + cmd. -o /dev/null prevents the
+		// binary from being written to the module root, which would race
+		// the parallel before/after runs.
+		root, rel := findModuleRoot(*flagPkg)
+		if root == "" {
+			log.Fatalf("could not find go.mod for %q", *flagPkg)
+		}
+		args = append(args, "-o", os.DevNull, rel)
+		dir = root
+	} else {
+		args = append(args, "std", "cmd")
+	}
+	cmd := exec.Command(cmdgo, args...)
+	cmd.Dir = dir
 	goos, goarch := parsePlatform(platform)
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch)
 	pipe, err := cmd.StderrPipe()
