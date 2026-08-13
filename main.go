@@ -31,14 +31,14 @@ var (
 	flagPkg     = flag.String("pkg", "", "package directory for compilation benchmarks and function comparison")
 	flagCount   = flag.Int("n", 0, "iterations")
 	flagEach    = flag.Bool("each", false, "run for every commit between before and after")
-	flagCL      = flag.Int("cl", 0, "run benchmark on CL number")
+	flagCL      = flag.Int("cl", 0, "compare CL number with its parent")
 	flagFn      = flag.String("fn", "", "find changed functions: all, changed, smaller, bigger, stats, or help")
-	flagDumpSSA = flag.String("dumpssa", "", "dump SSA html for named functions (use like GOSSAFUNC)")
+	flagDumpSSA = flag.String("dumpssa", "", "dump SSA html for package-qualified function")
 	flagAllBash = flag.Bool("allbash", false, "run all.bash for each commit")
 
-	flagFlags       = flag.String("flags", "", "compiler flags for both before and after")
-	flagBeforeFlags = flag.String("beforeflags", "", "compiler flags for before")
-	flagAfterFlags  = flag.String("afterflags", "", "compiler flags for after")
+	flagFlags       = flag.String("flags", "", "compilebench compiler flags for both before and after")
+	flagBeforeFlags = flag.String("beforeflags", "", "compilebench compiler flags for before")
+	flagAfterFlags  = flag.String("afterflags", "", "compilebench compiler flags for after")
 	flagPlatforms   = flag.String("platforms", "", "comma-separated list of platforms to compile for; all=all platforms, arch=one platform per arch")
 )
 
@@ -189,26 +189,34 @@ func allPlatforms() []string {
 }
 
 func compare(beforeRef, afterRef string) {
+	var all []string
+	if *flagPlatforms == "all" || *flagPlatforms == "arch" {
+		all = allPlatforms()
+	}
+	platforms := selectPlatforms(*flagPlatforms, all)
+	for _, platform := range platforms {
+		comparePlatform(platform, beforeRef, afterRef)
+	}
+}
+
+func selectPlatforms(spec string, all []string) []string {
 	var platforms []string
-	switch *flagPlatforms {
+	switch spec {
 	case "all":
-		platforms = allPlatforms()
+		platforms = all
 	case "arch":
-		// one platform per architecture
-		// in practice, right now, this means linux/* and js/wasm
-		all := allPlatforms()
+		// Linux provides one platform for each non-Wasm architecture.
+		// Use js/wasm as the single Wasm representative.
 		for _, platform := range all {
 			goos, goarch := parsePlatform(platform)
-			if goos == "linux" || goarch == "wasm" {
+			if goos == "linux" || goos == "js" && goarch == "wasm" {
 				platforms = append(platforms, platform)
 			}
 		}
 	default:
-		platforms = strings.Split(*flagPlatforms, ",")
+		platforms = strings.Split(spec, ",")
 	}
-	for _, platform := range platforms {
-		comparePlatform(platform, beforeRef, afterRef)
-	}
+	return platforms
 }
 
 func comparePlatform(platform, beforeRef, afterRef string) {
@@ -351,7 +359,14 @@ func (s *filesizes) add(name string, beforeSize, afterSize int64) {
 
 func (s *filesizes) flush(desc string) {
 	if s.haschange {
-		fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", "total", s.totbefore, s.totafter, s.totafter-s.totbefore, 100*float64(s.totafter)/float64(s.totbefore)-100)
+		switch {
+		case s.totbefore == 0:
+			fmt.Fprintf(s.w, "%s\t-\t%d\t%+d\t(added)\t\n", "total", s.totafter, s.totafter)
+		case s.totafter == 0:
+			fmt.Fprintf(s.w, "%s\t%d\t-\t%+d\t(removed)\t\n", "total", s.totbefore, -s.totbefore)
+		default:
+			fmt.Fprintf(s.w, "%s\t%d\t%d\t%+d\t%+0.3f%%\t\n", "total", s.totbefore, s.totafter, s.totafter-s.totbefore, 100*float64(s.totafter)/float64(s.totbefore)-100)
+		}
 		s.w.Flush()
 		return
 	}
@@ -468,14 +483,6 @@ func compareObjectFiles(platform string, before, after commit) {
 		sizes.add(name, beforeMap[suff], afterMap[suff])
 	}
 	sizes.flush("object file")
-}
-
-func filesize(path string) int64 {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return fi.Size()
 }
 
 func check(err error) {
@@ -766,7 +773,7 @@ func cleanCache() {
 	check(err)
 
 	// Look through ~/.compilecmp for any shas
-	// that are no longer contained in any branch, and delete them.
+	// that are no longer contained in any Git ref, and delete them.
 	// This is the most common way to end up accumulating
 	// lots of junk in .compilecmp.
 	var wg sync.WaitGroup
@@ -781,7 +788,7 @@ func cleanCache() {
 			gate <- true
 			defer func() { <-gate }()
 			wt := filepath.Join(root, sha)
-			cmd := exec.Command("git", "branch", "--contains", sha)
+			cmd := exec.Command("git", "for-each-ref", "--contains", sha, "--format=%(refname)")
 			cmd.Dir = wt
 			out, err := cmd.CombinedOutput()
 			okToDelete := false
@@ -793,26 +800,7 @@ func cleanCache() {
 					log.Fatalf("%s\n%s$ %s: %v", out, wt, cmd, err)
 				}
 			}
-			s := strings.TrimSpace(string(out))
-			lines := strings.Split(s, "\n")
-			// Decide whether any real branch contains this sha.
-			// `git branch --contains` in a detached worktree always prints a
-			// "* (HEAD detached at X)" or "* (no branch)" marker line for the
-			// worktree itself; that is not a real branch. Real branches appear
-			// as "  name" or "* name" (no parens).
-			hasBranch := false
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-				if strings.HasPrefix(line, "* (") {
-					continue
-				}
-				hasBranch = true
-				break
-			}
-			if okToDelete || !hasBranch {
+			if okToDelete || len(bytes.TrimSpace(out)) == 0 {
 				// OK to delete
 				err := os.RemoveAll(wt)
 				if err != nil {

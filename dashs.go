@@ -84,11 +84,17 @@ func compareFuncReaders(a, b io.Reader, aHash, bHash string) {
 		aPkg, aOk := aPkgs[pkg]
 		bPkg, bOk := bPkgs[pkg]
 		if !aOk {
-			log.Printf("package %s was added", pkg)
+			if *flagFn != "stats" {
+				log.Printf("package %s was added", pkg)
+			}
+			sizes.add(pkg+".s", 0, int64(packageTextSize(bPkg)))
 			continue
 		}
 		if !bOk {
-			log.Printf("package %s was deleted", pkg)
+			if *flagFn != "stats" {
+				log.Printf("package %s was deleted", pkg)
+			}
+			sizes.add(pkg+".s", int64(packageTextSize(aPkg)), 0)
 			continue
 		}
 		delete(aPkgs, pkg)
@@ -349,8 +355,16 @@ func (s *pkgScanner) flush() {
 }
 
 type stextFunc struct {
-	textsize int    // length in instructions of the function
+	textsize int    // size in bytes of the function's machine code
 	bodyhash []byte // hash of -S output for the function
+}
+
+func packageTextSize(pkg *pkgScanner) int {
+	var total int
+	for _, fn := range pkg.Funcs {
+		total += fn.textsize
+	}
+	return total
 }
 
 func extractNameAndSize(stext string) (string, int) {
