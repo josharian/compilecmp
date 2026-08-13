@@ -1,8 +1,10 @@
 compilecmp is a bit of a Swiss Army knife for Go compiler developers. It compares the compiler at different git commits. It can compare compilation time and memory usage, the sizes of the generated binaries, the sizes of the generated object files, and the generated code.
 
+Run compilecmp from the Go repository containing the commits you want to
+compare. Git refs are resolved in that repository.
+
 Important caveats:
 
-- compilecmp measures the toolchain (GOROOT) it was compiled with
 - compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
 - it is not safe to run multiple compilecmps concurrently
 - on startup, compilecmp deletes git-unreachable entries from its cache, which can be slow, because GOROOTs are large
@@ -75,6 +77,19 @@ compilecmp can also compare the generated code, function by function. (This part
 - `-fn=bigger`: print all functions whose text size has gotten bigger
 - `-fn=stats`: print only the summary (per package total function text size)
 
+Without `-pkg`, function-level comparison builds std and cmd:
+
+```
+$ compilecmp -fn=changed  # compare generated code for std and cmd
+```
+
+To compare an out-of-tree package instead, pass its directory inside a Go
+module. The comparison includes the package and its dependencies:
+
+```
+$ compilecmp -fn=changed -pkg /path/to/repo/cmd/foo
+```
+
 # Dumping SSA
 
 If you've identified a function of interest, you might want to compare
@@ -96,26 +111,21 @@ $ compilecmp -platforms=all  # compare compilation for all platforms
 $ compilecmp -platforms=arch  # compare compilation for one platform per architecture
 ```
 
-# Limiting the set of benchmarks
+# Selecting compilation benchmarks
 
-By default, compilecmp uses the benchmarks from `compilebench`. To run just a subset of those:
-
-```
-$ compilecmp -run Unicode  # runs only the unicode compiler benchmark
-```
-
-You can also run benchmarks for any package, not necessarily only those in `compilebench`, by using `-pkg`.
+With `-n`, compilecmp uses `compilebench` to measure compilation time and
+allocations. By default, it uses the benchmark set provided by `compilebench`.
+To run just a subset:
 
 ```
-$ compilebench -pkg github.com/pkg/diff  # test speed/allocs when compiling this package
+$ compilecmp -n 5 -run Unicode  # runs only the unicode compiler benchmark
 ```
 
-`-pkg` also works with `-fn`, in which case the function-level diff is taken
-across the named package and its dependencies (instead of std + cmd). The
-package is given as a directory path inside a Go module:
+To benchmark a package outside that set, pass its directory inside a Go module
+using `-pkg`:
 
 ```
-$ compilecmp -fn=changed -pkg /path/to/repo/cmd/foo  # compare generated code for cmd/foo and its deps
+$ compilecmp -n 5 -pkg /path/to/repo/cmd/foo  # test speed/allocs when compiling this package
 ```
 
 # Extra compiler flags

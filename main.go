@@ -28,7 +28,7 @@ var (
 	flagAll     = flag.Bool("all", false, "run all benchmarks, not just short ones")
 	flagCPU     = flag.Bool("cpu", false, "run only CPU tests, not alloc tests")
 	flagObj     = flag.Bool("obj", false, "report object file sizes")
-	flagPkg     = flag.String("pkg", "", "benchmark compilation of `pkg`")
+	flagPkg     = flag.String("pkg", "", "package directory for compilation benchmarks and function comparison")
 	flagCount   = flag.Int("n", 0, "iterations")
 	flagEach    = flag.Bool("each", false, "run for every commit between before and after")
 	flagCL      = flag.Int("cl", 0, "run benchmark on CL number")
