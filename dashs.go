@@ -359,9 +359,9 @@ func extractNameAndSize(stext string) (string, int) {
 		log.Fatalf("malformed STEXT line: %s: %q", msg, orig)
 		return "", 0
 	}
-	i := strings.IndexByte(stext, ' ')
+	i := strings.Index(stext, " STEXT ")
 	if i < 0 {
-		return bail("no space after name")
+		return bail("no STEXT field")
 	}
 	name := stext[:i]
 	stext = stext[i:]
