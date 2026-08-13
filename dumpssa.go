@@ -30,12 +30,7 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 
 	for _, c := range []commit{before, after} {
 		cmdgo := filepath.Join(c.dir, "bin", "go")
-		args := []string{"build"}
-		if pkg != "" {
-			args = append(args, pkg)
-		} else {
-			args = append(args, "std", "cmd")
-		}
+		args := []string{"build", "-a", pkg}
 		cmd := exec.Command(cmdgo, args...)
 		goos, goarch := parsePlatform(platform)
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "GOSSAFUNC="+fnname)
@@ -47,14 +42,13 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 		}
 
 		scan := bufio.NewScanner(bytes.NewReader(out))
+		dumped := false
 		for scan.Scan() {
 			s := scan.Text()
 			if len(s) == 0 {
 				continue
 			}
-			const dumpedSSATo = "dumped SSA to "
-			if strings.HasPrefix(s, dumpedSSATo) {
-				path := s[len(dumpedSSATo):]
+			if path, ok := ssaDumpPath(s); ok {
 				if !strings.HasSuffix(path, "ssa.html") {
 					panic("wrote ssa to non-ssa.html file")
 				}
@@ -70,24 +64,43 @@ func dumpSSA(platform string, before, after commit, fnname string) {
 				err = os.Rename(src, dst)
 				check(err)
 				fmt.Println(dst)
+				dumped = true
 			}
 		}
 		check(scan.Err())
+		if !dumped {
+			log.Fatalf("compiler did not dump SSA for %s at %s", fnname, c.ref)
+		}
 	}
 	fmt.Println()
 }
 
-func splitPkgFnname(in string) (pkg, fnname string) {
-	fnname = in
-	if slash := strings.LastIndex(fnname, "/"); slash >= 0 {
-		pkg = fnname[:slash]
-		fnname = fnname[slash:]
+func ssaDumpPath(line string) (string, bool) {
+	const oldPrefix = "dumped SSA to "
+	if strings.HasPrefix(line, oldPrefix) {
+		return line[len(oldPrefix):], true
 	}
-	if !strings.ContainsAny(fnname, "()*") {
-		if dot := strings.Index(fnname, "."); dot >= 0 {
-			pkg += fnname[:dot]
-			fnname = fnname[dot+1:]
+	if strings.HasPrefix(line, "dumped SSA for ") {
+		if i := strings.LastIndex(line, " to "); i >= 0 {
+			return line[i+len(" to "):], true
 		}
 	}
-	return pkg, fnname
+	return "", false
+}
+
+func splitPkgFnname(in string) (pkg, fnname string) {
+	tail := in
+	offset := 0
+	if slash := strings.LastIndex(in, "/"); slash >= 0 {
+		offset = slash + 1
+		tail = in[offset:]
+	}
+	if strings.HasPrefix(tail, "(") {
+		return "", in
+	}
+	if dot := strings.IndexByte(tail, '.'); dot >= 0 {
+		i := offset + dot
+		return in[:i], in[i+1:]
+	}
+	return "", in
 }
