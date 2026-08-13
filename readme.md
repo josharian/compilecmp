@@ -7,7 +7,7 @@ Important caveats:
 
 - compilecmp (unlike toolstash) uses the toolchain on itself, so if you (say) add a bunch of code to text/template, compilecmp will report that text/template got slower to compile; since the compiler itself is one of the subject packages, it can be ambiguous why a performance change for those entries occurred
 - it is not safe to run multiple compilecmps concurrently
-- on startup, compilecmp deletes git-unreachable entries from its cache, which can be slow, because GOROOTs are large
+- on startup, compilecmp deletes cache entries not contained in any Git ref, which can be slow, because GOROOTs are large
 
 # Specifying commits
 
@@ -43,6 +43,10 @@ compilecmp can also easily measure a series of commits, usually in a branch, usi
 $ compilecmp -each master head  # compares master to head, and then every individual commit between master and head to its parent
 ```
 
+By default, compilecmp runs `make.bash` when creating a toolchain and uses
+`go install std cmd` to refresh a cached toolchain. `-allbash` runs `all.bash`
+for each commit instead.
+
 # Number of runs
 
 Some compiler outputs are always the same, like the generated code, object files, and binaries.
@@ -55,11 +59,12 @@ $ compilecmp -n 5  # run five iterations
 
 `-n 5` is a good number for measuring allocations.
 
-`-n 50` is a good number for measuring CPU time. `-n 100` is better, particularly if you are trying to detect small changes. This takes a long time! compilecmp will print an ETA. Be sure to quit all other running apps, including backups (like Time Machine). I also suggest using `-cpu` in this case, to suppress memory profiling, which yields more consistent results.
+`-n 50` is a good number for measuring CPU time. `-n 100` is better, particularly if you are trying to detect small changes. This takes a long time! compilecmp will print an ETA. Be sure to quit all other running apps, including backups (like Time Machine). I also suggest using `-cpu` in this case, to skip allocation measurements, which yields more consistent results.
 
 When `n > 0`, compilecmp also does a uncounted warmup run at the beginning.
 
-When you specify a number of runs, compilecmp defaults to running all benchmarks.
+By default, compilecmp skips long-running benchmarks. Use `-all` to include
+them.
 
 # Compare files sizes
 
@@ -93,10 +98,10 @@ $ compilecmp -fn=changed -pkg /path/to/repo/cmd/foo
 # Dumping SSA
 
 If you've identified a function of interest, you might want to compare
-the ssa.html output:
+the ssa.html output. The function name must include its package:
 
 ```
-$ compilecmp -dumpssa "(*decoder).processDHT"
+$ compilecmp -dumpssa "image/jpeg.(*decoder).processDHT"
 ```
 
 This will print the path to before and after SSA html files.
@@ -110,6 +115,9 @@ $ compilecmp -platforms=darwin/amd64,linux/arm  # compare compilation for two pl
 $ compilecmp -platforms=all  # compare compilation for all platforms
 $ compilecmp -platforms=arch  # compare compilation for one platform per architecture
 ```
+
+`-platforms=arch` uses Linux for non-Wasm architectures and `js/wasm` for
+Wasm.
 
 # Selecting compilation benchmarks
 
@@ -128,12 +136,15 @@ using `-pkg`:
 $ compilecmp -n 5 -pkg /path/to/repo/cmd/foo  # test speed/allocs when compiling this package
 ```
 
-# Extra compiler flags
+# Extra compiler flags for benchmarks
 
-compilecmp can pass extra compiler flags. To see how much using `-race` slows down the compiler:
+With `-n`, compilecmp can pass extra compiler flags through `compilebench`. To
+see how much using `-race` slows down the compiler:
 
 ```
-$ compilecmp -afterflags=-race
+$ compilecmp -n 5 -afterflags=-race
 ```
 
-`-beforeflags` passes flags to only the "before" commit. `flags` adds flags to both `-beforeflags` and `-afterflags`.
+`-beforeflags` passes flags to only the "before" commit. `-flags` adds flags to
+both `-beforeflags` and `-afterflags`. These flags do not affect binary,
+object-file, function, or SSA comparisons.
