@@ -254,8 +254,8 @@ func comparePlatform(platform, beforeRef, afterRef string) {
 			if record {
 				e.update(i - 1)
 			}
-			before.bench(platform, beforeFlags, record)
-			after.bench(platform, afterFlags, record)
+			check(before.bench(platform, beforeFlags, record))
+			check(after.bench(platform, afterFlags, record))
 			if record {
 				e.update(i)
 			}
@@ -520,7 +520,7 @@ func (c *commit) cmdgo(platform string, args ...string) []byte {
 	return out
 }
 
-func (c *commit) bench(platform, compilerflags string, record bool) {
+func (c *commit) bench(platform, compilerflags string, record bool) error {
 	var args []string
 	if !*flagAll {
 		args = append(args, "-short")
@@ -542,18 +542,40 @@ func (c *commit) bench(platform, compilerflags string, record bool) {
 	}
 	args = append(args, "-go="+filepath.Join(c.dir, "bin", "go"))
 	cmd := exec.Command("compilebench", args...)
-	path := "PATH=" + filepath.Join(c.dir, "bin")
-	if sz, err := exec.LookPath("size"); err == nil {
-		path += ":" + filepath.Dir(sz)
-	}
+	path := "PATH=" + filepath.Join(c.dir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
 	goos, goarch := parsePlatform(platform)
 	cmd.Env = append(os.Environ(), path, "GOOS="+goos, "GOARCH="+goarch)
 	cmd.Dir = c.dir
-	if record {
-		cmd.Stdout = c.tmp
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("compilebench for %s failed: %w\n%s", c.ref, err, stderr.Bytes())
 	}
-	err := cmd.Run()
-	check(err)
+	if err := validateCompilebenchOutput(c.ref, stdout.Bytes(), stderr.Bytes()); err != nil {
+		return err
+	}
+	if stderr.Len() != 0 {
+		if _, err := os.Stderr.Write(stderr.Bytes()); err != nil {
+			return fmt.Errorf("reporting compilebench stderr for %s: %w", c.ref, err)
+		}
+	}
+	if record {
+		if _, err := c.tmp.Write(stdout.Bytes()); err != nil {
+			return fmt.Errorf("recording compilebench output for %s: %w", c.ref, err)
+		}
+	}
+	return nil
+}
+
+func validateCompilebenchOutput(ref string, stdout, stderr []byte) error {
+	if bytes.Contains(stderr, []byte("compilebench:")) {
+		return fmt.Errorf("compilebench for %s reported errors:\n%s", ref, stderr)
+	}
+	if len(stdout) == 0 {
+		return fmt.Errorf("compilebench for %s produced no benchmark output", ref)
+	}
+	return nil
 }
 
 func git(args ...string) ([]byte, error) {

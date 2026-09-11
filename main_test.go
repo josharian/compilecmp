@@ -30,3 +30,43 @@ func TestFilesizesAddedTotal(t *testing.T) {
 		t.Fatalf("unexpected added-only total:\n%s", got)
 	}
 }
+
+func TestValidateCompilebenchOutput(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		stdout string
+		stderr string
+		want   string
+	}{
+		{
+			name:   "success",
+			stdout: "BenchmarkCompiler 1 1 ns/op\n",
+		},
+		{
+			name:   "compiler diagnostics",
+			stdout: "BenchmarkCompiler 1 1 ns/op\n",
+			stderr: "type.go:10: can inline f\n",
+		},
+		{
+			name:   "compilebench error",
+			stdout: "BenchmarkCompiler 1 1 ns/op\n",
+			stderr: "compilebench: BenchmarkLinkCompiler: exit status 1\n",
+			want:   "reported errors",
+		},
+		{
+			name: "empty stdout",
+			want: "produced no benchmark output",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateCompilebenchOutput("before", []byte(test.stdout), []byte(test.stderr))
+			if test.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateCompilebenchOutput error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
